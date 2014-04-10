@@ -41,9 +41,10 @@ public final class EJBHomeLocator<T extends EJBHome> extends EJBLocator<T> {
      * @param moduleName   the module name
      * @param beanName     the bean name
      * @param distinctName the distinct name
+     * @param affinity     the affinity
      */
-    public EJBHomeLocator(final Class<T> viewType, final String appName, final String moduleName, final String beanName, final String distinctName) {
-        super(viewType, appName, moduleName, beanName, distinctName, Affinity.NONE);
+    public EJBHomeLocator(final Class<T> viewType, final String appName, final String moduleName, final String beanName, final String distinctName, final Affinity affinity) {
+        super(viewType, appName, moduleName, beanName, distinctName, affinity);
     }
 
     /**
@@ -54,10 +55,61 @@ public final class EJBHomeLocator<T extends EJBHome> extends EJBLocator<T> {
      * @param moduleName   the module name
      * @param beanName     the bean name
      * @param distinctName the distinct name
+     */
+    public EJBHomeLocator(final Class<T> viewType, final String appName, final String moduleName, final String beanName, final String distinctName) {
+        this(viewType, appName, moduleName, beanName, distinctName, Affinity.NONE);
+    }
+
+    /**
+     * Construct a new instance.
+     *
+     * @param viewType     the view type
+     * @param appName      the application name
+     * @param moduleName   the module name
+     * @param beanName     the bean name
      * @param affinity     the affinity
      */
-    public EJBHomeLocator(final Class<T> viewType, final String appName, final String moduleName, final String beanName, final String distinctName, final Affinity affinity) {
-        super(viewType, appName, moduleName, beanName, distinctName, affinity);
+    public EJBHomeLocator(final Class<T> viewType, final String appName, final String moduleName, final String beanName, final Affinity affinity) {
+        this(viewType, appName, moduleName, beanName, null, affinity);
+    }
+
+    /**
+     * Construct a new instance.
+     *
+     * @param viewType     the view type
+     * @param appName      the application name
+     * @param moduleName   the module name
+     * @param beanName     the bean name
+     */
+    public EJBHomeLocator(final Class<T> viewType, final String appName, final String moduleName, final String beanName) {
+        this(viewType, appName, moduleName, beanName, null, Affinity.NONE);
+    }
+
+    /**
+     * Construct a new instance from an original instance but with a new affinity.
+     *
+     * @param original the original locator
+     * @param newAffinity the new affinity to use
+     */
+    public EJBHomeLocator(final EJBHomeLocator<T> original, final Affinity newAffinity) {
+        super(original, newAffinity);
+    }
+
+    public EJBLocator<T> withNewAffinity(final Affinity affinity) {
+        return new EJBHomeLocator<T>(this, affinity);
+    }
+
+    @SuppressWarnings("unchecked")
+    public <S> EJBHomeLocator<? extends S> narrowTo(final Class<S> type) {
+        return (EJBHomeLocator<? extends S>) super.narrowTo(type);
+    }
+
+    @SuppressWarnings("unchecked")
+    public <S extends EJBHome> EJBHomeLocator<? extends S> narrowAsHome(final Class<S> type) {
+        if (type.isAssignableFrom(getViewType())) {
+            return (EJBHomeLocator<? extends S>) this;
+        }
+        throw new ClassCastException(type.toString());
     }
 
     /**
@@ -77,19 +129,6 @@ public final class EJBHomeLocator<T extends EJBHome> extends EJBLocator<T> {
      */
     public boolean equals(final Object other) {
         return other instanceof EJBHomeLocator && equals((EJBHomeLocator<?>) other);
-    }
-
-    @SuppressWarnings("unchecked")
-    public <S> EJBHomeLocator<? extends S> narrowTo(final Class<S> type) {
-        return (EJBHomeLocator<? extends S>) super.narrowTo(type);
-    }
-
-    @SuppressWarnings("unchecked")
-    public <S extends EJBHome> EJBHomeLocator<? extends S> narrowAsHome(final Class<S> type) {
-        if (type.isAssignableFrom(getViewType())) {
-            return (EJBHomeLocator<? extends S>) this;
-        }
-        throw new ClassCastException(type.toString());
     }
 
     /**
