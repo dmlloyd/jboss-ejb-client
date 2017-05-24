@@ -713,7 +713,11 @@ public final class EJBClientContext extends Attachable implements Contextual<EJB
                 throw Logs.MAIN.noTransportProvider(locator, scheme);
             }
         } else {
-            return locatedAction.execute(transportProvider, locator, effectiveAffinity, authenticationConfiguration, sslContext);
+            if (fallbackAffinity != null && effectiveAffinity instanceof URIAffinity && ! transportProvider.isConnected(effectiveAffinity.getUri())) {
+                return discoverAffinityCluster(locator, fallbackAffinity, locatedAction, Affinity.NONE, authenticationConfiguration, sslContext);
+            } else {
+                return locatedAction.execute(transportProvider, locator, effectiveAffinity, authenticationConfiguration, sslContext);
+            }
         }
     }
 
