@@ -73,6 +73,7 @@ public final class EJBClientContext extends Attachable implements Contextual<EJB
      * The service type to use for EJB discovery.
      */
     public static final ServiceType EJB_SERVICE_TYPE = ServiceType.of("ejb", "jboss");
+    static final ServiceType EJB_SERVICE_TYPE_WITH_NODE = ServiceType.of("ejb", "jboss", "node", null);
 
     private static final ContextManager<EJBClientContext> CONTEXT_MANAGER = new ContextManager<EJBClientContext>(EJBClientContext.class, "jboss.ejb.client");
 
@@ -872,7 +873,7 @@ public final class EJBClientContext extends Attachable implements Contextual<EJB
         Set<URI> unresolvedUris = new HashSet<>();
         Set<String> nodes = new HashSet<>();
         List<Throwable> problems;
-        try (final ServicesQueue servicesQueue = discover(getFilterSpec(clusterAffinity))) {
+        try (final ServicesQueue servicesQueue = getDiscovery().discover(EJB_SERVICE_TYPE_WITH_NODE, getFilterSpec(clusterAffinity))) {
             // interruption is caught in the calling method
             ServiceURL serviceURL = servicesQueue.takeService();
             while (serviceURL != null) {
