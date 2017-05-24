@@ -18,9 +18,7 @@
 
 package org.jboss.ejb.protocol.remote;
 
-import org.jboss.ejb.client.EJBClientConnection;
 import org.jboss.ejb.client.EJBClientContext;
-import org.jboss.remoting3.Connection;
 import org.jboss.remoting3.Endpoint;
 import org.wildfly.discovery.Discovery;
 import org.wildfly.discovery.FilterSpec;
@@ -30,18 +28,6 @@ import org.wildfly.discovery.ServicesQueue;
 import org.wildfly.discovery.spi.DiscoveryProvider;
 import org.wildfly.discovery.spi.DiscoveryRequest;
 import org.wildfly.discovery.spi.DiscoveryResult;
-import org.xnio.IoFuture;
-import org.xnio.OptionMap;
-
-import java.io.IOException;
-import java.net.URI;
-import java.security.PrivilegedAction;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import static java.security.AccessController.doPrivileged;
 
 /**
  * Provides discovery service based on persistent cluster service registry entries.
@@ -71,12 +57,14 @@ final class RemotingClusteredEJBDiscoveryProvider implements DiscoveryProvider {
 
         // search for any cluster related ServiceURLs for this filterspec
         try (final ServicesQueue servicesQueue = Discovery.create(ejbReceiver.getRemoteTransportProvider().getClusterDiscoveryProvider()).discover(serviceType, filterSpec)) {
-            URI serviceURI = servicesQueue.take();
+            ServiceURL serviceURL = servicesQueue.takeService();
             // add matches if there are results
-            if (serviceURI != null) {
-                while (serviceURI != null) {
-                    result.addMatch(serviceURI);
-                    serviceURI = servicesQueue.take();
+            if (serviceURL != null) {
+                while (serviceURL != null) {
+                    if (serviceURL.implies(serviceType)) {
+                        result.addMatch(serviceURL.getLocationURI());
+                    }
+                    serviceURL = servicesQueue.takeService();
                 }
                 result.complete();
                 return DiscoveryRequest.NULL;
