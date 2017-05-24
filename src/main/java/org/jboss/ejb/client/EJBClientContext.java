@@ -713,11 +713,29 @@ public final class EJBClientContext extends Attachable implements Contextual<EJB
                 throw Logs.MAIN.noTransportProvider(locator, scheme);
             }
         } else {
-            if (fallbackAffinity != null && effectiveAffinity instanceof URIAffinity && ! transportProvider.isConnected(effectiveAffinity.getUri())) {
+            if (fallbackAffinity != null && effectiveAffinity instanceof URIAffinity && (! transportProvider.isConnected(effectiveAffinity.getUri()) || isStale(effectiveAffinity.getUri(), fallbackAffinity))) {
                 return discoverAffinityCluster(locator, fallbackAffinity, locatedAction, Affinity.NONE, authenticationConfiguration, sslContext);
             } else {
                 return locatedAction.execute(transportProvider, locator, effectiveAffinity, authenticationConfiguration, sslContext);
             }
+        }
+    }
+
+    boolean isStale(URI uri, ClusterAffinity clusterAffinity) {
+        try (final ServicesQueue servicesQueue = getDiscovery().discover(ServiceType.of("ejb", "jboss", uri.getScheme(), null), getFilterSpec(clusterAffinity))) {
+            ServiceURL serviceURL;
+            for (;;) {
+                serviceURL = servicesQueue.takeService();
+                if (serviceURL == null) {
+                    return true;
+                }
+                if (serviceURL.getLocationURI().equals(uri)) {
+                    return false;
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw Logs.MAIN.operationInterrupted();
         }
     }
 
