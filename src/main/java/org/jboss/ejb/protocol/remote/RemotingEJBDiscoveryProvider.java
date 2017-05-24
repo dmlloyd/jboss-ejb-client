@@ -72,14 +72,16 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider {
         final List<EJBClientConnection> connections = new ArrayList<>(ejbClientContext.getConfiguredConnections());
 
         // attempt to obtain connection information for any cluster nodes
-        URI serviceURI;
+        ServiceURL serviceURL;
         try (final ServicesQueue servicesQueue = Discovery.create(ejbReceiver.getRemoteTransportProvider().getClusterDiscoveryProvider()).discover(serviceType, null)) {
-            serviceURI = servicesQueue.take();
-            while (serviceURI != null) {
-                EJBClientConnection.Builder nodeConnectionBuilder = new EJBClientConnection.Builder();
-                nodeConnectionBuilder.setDestination(serviceURI);
-                connections.add(nodeConnectionBuilder.build());
-                serviceURI = servicesQueue.take();
+            serviceURL = servicesQueue.takeService();
+            while (serviceURL != null) {
+                if (serviceURL.implies(serviceType)) {
+                    EJBClientConnection.Builder nodeConnectionBuilder = new EJBClientConnection.Builder();
+                    nodeConnectionBuilder.setDestination(serviceURL.getLocationURI());
+                    connections.add(nodeConnectionBuilder.build());
+                }
+                serviceURL = servicesQueue.takeService();
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
