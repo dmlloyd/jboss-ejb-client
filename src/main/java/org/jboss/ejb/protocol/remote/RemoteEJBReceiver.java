@@ -60,11 +60,11 @@ class RemoteEJBReceiver extends EJBReceiver {
 
     private final RemoteTransportProvider remoteTransportProvider;
     private final EJBReceiverContext receiverContext;
-    private final DiscoveredNodeRegistry discoveredNodeRegistry;
+    private final RemotingEJBDiscoveryProvider discoveredNodeRegistry;
 
     final ClientServiceHandle<EJBClientChannel> serviceHandle;
 
-    RemoteEJBReceiver(final RemoteTransportProvider remoteTransportProvider, final EJBReceiverContext receiverContext, final DiscoveredNodeRegistry discoveredNodeRegistry) {
+    RemoteEJBReceiver(final RemoteTransportProvider remoteTransportProvider, final EJBReceiverContext receiverContext, final RemotingEJBDiscoveryProvider discoveredNodeRegistry) {
         this.remoteTransportProvider = remoteTransportProvider;
         this.receiverContext = receiverContext;
         this.discoveredNodeRegistry = discoveredNodeRegistry;
@@ -96,6 +96,10 @@ class RemoteEJBReceiver extends EJBReceiver {
 
     RemoteTransportProvider getRemoteTransportProvider() {
         return remoteTransportProvider;
+    }
+
+    RemotingEJBDiscoveryProvider getDiscoveredNodeRegistry() {
+        return discoveredNodeRegistry;
     }
 
     EJBReceiverContext getReceiverContext() {

@@ -40,7 +40,7 @@ public final class RemoteTransportProvider implements EJBTransportProvider {
 
     public void notifyRegistered(final EJBReceiverContext receiverContext) {
         final EJBClientContext clientContext = receiverContext.getClientContext();
-        clientContext.putAttachmentIfAbsent(ATTACHMENT_KEY, new RemoteEJBReceiver(this, receiverContext, RemotingEJBDiscoveryProvider.INSTANCE));
+        clientContext.putAttachmentIfAbsent(ATTACHMENT_KEY, new RemoteEJBReceiver(this, receiverContext, new RemotingEJBDiscoveryProvider()));
     }
 
     public boolean supportsProtocol(final String uriScheme) {

@@ -58,13 +58,12 @@ import org.xnio.OptionMap;
  * @author <a href="mailto:david.lloyd@redhat.com">David M. Lloyd</a>
  */
 final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, DiscoveredNodeRegistry {
-    static final RemotingEJBDiscoveryProvider INSTANCE = new RemotingEJBDiscoveryProvider();
 
     private final ConcurrentHashMap<String, NodeInformation> nodes = new ConcurrentHashMap<>();
 
     private final Set<URI> failedDestinations = new ConcurrentHashMap<URI, Void>().keySet();
 
-    private RemotingEJBDiscoveryProvider() {
+    public RemotingEJBDiscoveryProvider() {
         Endpoint.getCurrent(); //this will blow up if remoting is not present, preventing this from being registered
     }
 
