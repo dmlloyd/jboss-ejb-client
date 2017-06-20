@@ -61,7 +61,7 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
 
     private final ConcurrentHashMap<String, NodeInformation> nodes = new ConcurrentHashMap<>();
 
-    private final Set<URI> failedDestinations = new ConcurrentHashMap<URI, Void>().keySet();
+    private final Set<URI> failedDestinations = Collections.newSetFromMap(new ConcurrentHashMap<URI, Boolean>());
 
     public RemotingEJBDiscoveryProvider() {
         Endpoint.getCurrent(); //this will blow up if remoting is not present, preventing this from being registered
