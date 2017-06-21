@@ -293,7 +293,11 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
                     final String node = filterSpec.accept(NODE_EXTRACTOR);
                     if (node != null) {
                         final NodeInformation information = nodes.get(node);
-                        if (information != null) information.discover(serviceType, filterSpec, result);
+                        if (information != null) {
+                            if (information.discover(serviceType, filterSpec, result)) {
+                                ok = true;
+                            }
+                        }
                     } else for (NodeInformation information : nodes.values()) {
                         if (information.discover(serviceType, filterSpec, result)) {
                             ok = true;

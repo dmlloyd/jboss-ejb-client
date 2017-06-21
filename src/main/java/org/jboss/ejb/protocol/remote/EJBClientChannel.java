@@ -963,6 +963,7 @@ class EJBClientChannel {
                             final SessionID sessionID = SessionID.createSessionID(encoded);
                             final EJBClientInvocationContext context = receiverInvocationContext.getClientInvocationContext();
                             EJBClient.convertToStateful(context.getInvokedProxy(), sessionID);
+//                            context.setWeakAffinity();
                         }
                     } catch (RuntimeException | IOException | RollbackException | SystemException e) {
                         receiverInvocationContext.resultReady(new EJBReceiverInvocationContext.ResultProducer.Failed(new EJBException(e)));
