@@ -64,14 +64,21 @@ final class NodeInformation {
         return nodeName;
     }
 
-    void discover(ServiceType serviceType, FilterSpec filterSpec, DiscoveryResult discoveryResult) {
-        if (invalid) return;
+    boolean discover(ServiceType serviceType, FilterSpec filterSpec, DiscoveryResult discoveryResult) {
+        if (invalid) return false;
+        boolean found = false;
         List<ServiceURL> serviceURLCache = getServiceURLCache();
         for (ServiceURL serviceURL : serviceURLCache) {
             if (serviceURL.satisfies(filterSpec) && serviceType.implies(serviceURL)) {
+                found = true;
                 discoveryResult.addMatch(serviceURL);
             }
         }
+        return found;
+    }
+
+    ConcurrentMap<String, ClusterNodeInformation> getClustersByName() {
+        return clustersByName;
     }
 
     // this structure mashes together the cluster topo reports from various nodes, and the mod avail report from this node

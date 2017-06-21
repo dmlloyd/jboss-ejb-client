@@ -25,11 +25,17 @@ import static org.jboss.ejb.client.EJBClientContext.FILTER_ATTR_NODE;
 import static org.jboss.ejb.client.EJBClientContext.getCurrent;
 
 import java.io.IOException;
+import java.net.Inet6Address;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.security.PrivilegedAction;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -39,6 +45,8 @@ import org.jboss.ejb.client.EJBClientContext;
 import org.jboss.ejb.client.EJBModuleIdentifier;
 import org.jboss.remoting3.ConnectionPeerIdentity;
 import org.jboss.remoting3.Endpoint;
+import org.wildfly.common.net.CidrAddressTable;
+import org.wildfly.common.net.Inet;
 import org.wildfly.discovery.AllFilterSpec;
 import org.wildfly.discovery.AttributeValue;
 import org.wildfly.discovery.EqualsFilterSpec;
@@ -206,6 +214,7 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
 
         private final Endpoint endpoint;
         private final AtomicInteger outstandingCount = new AtomicInteger(1); // this is '1' so that we don't finish until all connections are searched
+        private volatile boolean phase2;
         private final List<Runnable> cancellers = Collections.synchronizedList(new ArrayList<>());
         private final IoFuture.HandlingNotifier<ConnectionPeerIdentity, URI> outerNotifier;
         private final IoFuture.HandlingNotifier<EJBClientChannel, URI> innerNotifier;
@@ -267,16 +276,77 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
         void countDown() {
             if (outstandingCount.decrementAndGet() == 0) {
                 final DiscoveryResult result = this.discoveryResult;
-                // optimize for simple module identifier and node name queries
-                final EJBModuleIdentifier module = filterSpec.accept(MI_EXTRACTOR);
-                final String node = filterSpec.accept(NODE_EXTRACTOR);
-                if (node != null) {
-                    final NodeInformation information = nodes.get(node);
-                    if (information != null) information.discover(serviceType, filterSpec, result);
-                } else for (NodeInformation information : nodes.values()) {
-                    information.discover(serviceType, filterSpec, result);
+                if (phase2) {
+                    final String node = filterSpec.accept(NODE_EXTRACTOR);
+                    if (node != null) {
+                        final NodeInformation information = nodes.get(node);
+                        if (information != null) information.discover(serviceType, filterSpec, result);
+                    } else for (NodeInformation information : nodes.values()) {
+                        information.discover(serviceType, filterSpec, result);
+                    }
+                    result.complete();
+                } else {
+                    boolean ok = false;
+                    // optimize for simple module identifier and node name queries
+                    final EJBModuleIdentifier module = filterSpec.accept(MI_EXTRACTOR);
+                    final String node = filterSpec.accept(NODE_EXTRACTOR);
+                    if (node != null) {
+                        final NodeInformation information = nodes.get(node);
+                        if (information != null) information.discover(serviceType, filterSpec, result);
+                    } else for (NodeInformation information : nodes.values()) {
+                        if (information.discover(serviceType, filterSpec, result)) {
+                            ok = true;
+                        }
+                    }
+                    if (ok) {
+                        result.complete();
+                    } else {
+                        // everything failed.  We have to reconnect everything.
+                        Set<URI> everything = new HashSet<>();
+                        for (EJBClientConnection connection : ejbReceiver.getReceiverContext().getClientContext().getConfiguredConnections()) {
+                            if (connection.isForDiscovery()) {
+                                everything.add(connection.getDestination());
+                            }
+                        }
+                        outer: for (NodeInformation information : nodes.values()) {
+                            for (NodeInformation.ClusterNodeInformation cni : information.getClustersByName().values()) {
+                                final Map<String, CidrAddressTable<InetSocketAddress>> atm = cni.getAddressTablesByProtocol();
+                                for (Map.Entry<String, CidrAddressTable<InetSocketAddress>> entry2 : atm.entrySet()) {
+                                    final String protocol = entry2.getKey();
+                                    final CidrAddressTable<InetSocketAddress> addressTable = entry2.getValue();
+                                    for (CidrAddressTable.Mapping<InetSocketAddress> mapping : addressTable) {
+                                        final InetSocketAddress destination = mapping.getValue();
+                                        final InetSocketAddress source = ejbReceiver.getSourceAddress(destination);
+                                        if (source == null ? mapping.getRange().getNetmaskBits() == 0 : source.equals(destination)) {
+                                            try {
+                                                final InetAddress destinationAddress = destination.getAddress();
+                                                String hostName = Inet.getHostNameIfResolved(destinationAddress);
+                                                if (hostName == null) {
+                                                    if (destinationAddress instanceof Inet6Address) {
+                                                        hostName = '[' + Inet.toOptimalString(destinationAddress) + ']';
+                                                    } else {
+                                                        hostName = Inet.toOptimalString(destinationAddress);
+                                                    }
+                                                }
+                                                everything.add(new URI(protocol, null, hostName, destination.getPort(), null, null, null));
+                                                continue outer;
+                                            } catch (URISyntaxException e) {
+                                                // ignore URI and try the next one
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // now connect them ALL
+                        phase2 = true;
+                        outstandingCount.incrementAndGet();
+                        for (URI uri : everything) {
+                            connectAndDiscover(uri);
+                        }
+                        countDown();
+                    }
                 }
-                result.complete();
             }
         }
 
