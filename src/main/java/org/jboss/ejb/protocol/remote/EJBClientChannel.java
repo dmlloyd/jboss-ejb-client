@@ -974,6 +974,10 @@ class EJBClientChannel {
                 }
                 case Protocol.CANCEL_RESPONSE: {
                     free();
+                    if (version >= 3) {
+                        final XAOutflowHandle outflowHandle = getOutflowHandle();
+                        if (outflowHandle != null) outflowHandle.forgetEnlistment();
+                    }
                     receiverInvocationContext.resultReady(new EJBReceiverInvocationContext.ResultProducer.Failed(Logs.REMOTING.requestCancelled()));
                     break;
                 }
@@ -985,7 +989,14 @@ class EJBClientChannel {
                 case Protocol.NO_SUCH_EJB: {
                     free();
                     try {
+                        if (version >= 3) {
+                            final XAOutflowHandle outflowHandle = getOutflowHandle();
+                            if (outflowHandle != null) outflowHandle.forgetEnlistment();
+                        }
                         final String message = inputStream.readUTF();
+                        final EJBModuleIdentifier moduleIdentifier = receiverInvocationContext.getClientInvocationContext().getLocator().getIdentifier().getModuleIdentifier();
+                        final NodeInformation nodeInformation = discoveredNodeRegistry.getNodeInformation(getChannel().getConnection().getRemoteEndpointName());
+                        nodeInformation.removeModule(EJBClientChannel.this, moduleIdentifier);
                         receiverInvocationContext.resultReady(new EJBReceiverInvocationContext.ResultProducer.Failed(new NoSuchEJBException(message)));
                     } catch (IOException e) {
                         receiverInvocationContext.resultReady(new EJBReceiverInvocationContext.ResultProducer.Failed(new EJBException("Failed to read 'No such EJB' response", e)));
@@ -997,6 +1008,10 @@ class EJBClientChannel {
                 case Protocol.BAD_VIEW_TYPE: {
                     free();
                     try {
+                        if (version >= 3) {
+                            final XAOutflowHandle outflowHandle = getOutflowHandle();
+                            if (outflowHandle != null) outflowHandle.forgetEnlistment();
+                        }
                         final String message = inputStream.readUTF();
                         receiverInvocationContext.resultReady(new EJBReceiverInvocationContext.ResultProducer.Failed(Logs.REMOTING.invalidViewTypeForInvocation(message)));
                     } catch (IOException e) {
@@ -1009,6 +1024,10 @@ class EJBClientChannel {
                 case Protocol.NO_SUCH_METHOD: {
                     free();
                     try {
+                        if (version >= 3) {
+                            final XAOutflowHandle outflowHandle = getOutflowHandle();
+                            if (outflowHandle != null) outflowHandle.forgetEnlistment();
+                        }
                         final String message = inputStream.readUTF();
                         // todo: I don't think this is the best exception type for this case...
                         receiverInvocationContext.resultReady(new EJBReceiverInvocationContext.ResultProducer.Failed(new IllegalArgumentException(message)));
@@ -1022,6 +1041,10 @@ class EJBClientChannel {
                 case Protocol.SESSION_NOT_ACTIVE: {
                     free();
                     try {
+                        if (version >= 3) {
+                            final XAOutflowHandle outflowHandle = getOutflowHandle();
+                            if (outflowHandle != null) outflowHandle.forgetEnlistment();
+                        }
                         final String message = inputStream.readUTF();
                         receiverInvocationContext.resultReady(new EJBReceiverInvocationContext.ResultProducer.Failed(new EJBException(message)));
                     } catch (IOException e) {
@@ -1034,6 +1057,10 @@ class EJBClientChannel {
                 case Protocol.EJB_NOT_STATEFUL: {
                     free();
                     try {
+                        if (version >= 3) {
+                            final XAOutflowHandle outflowHandle = getOutflowHandle();
+                            if (outflowHandle != null) outflowHandle.forgetEnlistment();
+                        }
                         final String message = inputStream.readUTF();
                         receiverInvocationContext.resultReady(new EJBReceiverInvocationContext.ResultProducer.Failed(new EJBException(message)));
                     } catch (IOException e) {

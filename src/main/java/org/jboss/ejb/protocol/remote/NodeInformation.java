@@ -232,6 +232,16 @@ final class NodeInformation {
         }
     }
 
+    void removeModule(final EJBClientChannel clientChannel, final EJBModuleIdentifier toRemove) {
+        synchronized (this) {
+            serviceURLCache = null;
+            final Set<EJBModuleIdentifier> set = modulesByConnection.get(clientChannel);
+            if (set != null) {
+                set.remove(toRemove);
+            }
+        }
+    }
+
     void addAddress(EJBClientChannel clientChannel) {
         synchronized (this) {
             addressesByConnection.put(clientChannel, (InetSocketAddress) clientChannel.getChannel().getConnection().getPeerAddress());
