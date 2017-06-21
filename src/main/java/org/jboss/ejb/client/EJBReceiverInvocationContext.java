@@ -22,6 +22,7 @@ import java.util.Arrays;
 
 import javax.net.ssl.SSLContext;
 
+import org.wildfly.common.Assert;
 import org.wildfly.security.auth.client.AuthenticationConfiguration;
 
 /**
@@ -61,6 +62,16 @@ public final class EJBReceiverInvocationContext {
      */
     public void requestCancelled() {
         clientInvocationContext.cancelled();
+    }
+
+    /**
+     * Indicate that a request failed locally with the given exception cause.
+     *
+     * @param cause the failure cause (must not be {@code null})
+     */
+    public void requestFailed(Throwable cause) {
+        Assert.checkNotNullParam("cause", cause);
+        clientInvocationContext.failed(cause);
     }
 
     /**

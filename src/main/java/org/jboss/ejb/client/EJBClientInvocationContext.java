@@ -49,7 +49,7 @@ public final class EJBClientInvocationContext extends Attachable {
     private static final Logs log = Logs.MAIN;
 
     public static final String PRIVATE_ATTACHMENTS_KEY = "org.jboss.ejb.client.invocation.attachments";
-    private static final EJBReceiverInvocationContext.ResultProducer.Immediate NULL_RESPONSE = new EJBReceiverInvocationContext.ResultProducer.Immediate(null);
+
     private static final int MAX_RETRIES = 5;
 
     // Contextual stuff
@@ -518,11 +518,9 @@ public final class EJBClientInvocationContext extends Attachable {
         return new FutureResponse();
     }
 
-    static final Object PROCEED_ASYNC = new Object();
-
     void proceedAsynchronously() {
         if (getInvokedMethod().getReturnType() == void.class) {
-            this.resultReady(NULL_RESPONSE);
+            this.discardResult();
         }
     }
 
@@ -580,7 +578,7 @@ public final class EJBClientInvocationContext extends Attachable {
                                     state = State.CANCEL_REQ;
                                     cancel = true;
                                 }
-                                this.resultReady(new InvocationTimeoutResultProducer(invocationTimeout));
+                                this.failed(new TimeoutException("No invocation response received in " + invocationTimeout + " milliseconds"));
                                 break;
                             }
                             try {
