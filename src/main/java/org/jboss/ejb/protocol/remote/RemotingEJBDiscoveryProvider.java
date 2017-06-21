@@ -265,6 +265,7 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
         void connectAndDiscover(URI uri) {
             final String scheme = uri.getScheme();
             if (scheme == null || ! ejbReceiver.getRemoteTransportProvider().supportsProtocol(scheme) || ! endpoint.isValidUriScheme(scheme)) {
+                countDown();
                 return;
             }
             outstandingCount.getAndIncrement();
