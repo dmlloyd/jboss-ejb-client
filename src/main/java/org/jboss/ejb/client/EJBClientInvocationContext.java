@@ -70,7 +70,6 @@ public final class EJBClientInvocationContext extends Attachable {
     private EJBReceiver receiver;
     private EJBLocator<?> locator;
     private State state = State.WAITING;
-    private AsyncState asyncState = AsyncState.SYNCHRONOUS;
     private Object cachedResult;
     private Map<String, Object> contextData;
 
@@ -89,13 +88,6 @@ public final class EJBClientInvocationContext extends Attachable {
         this.ejbClientContext = ejbClientContext;
         this.methodInfo = methodInfo;
         this.locator = invocationHandler.getLocator();
-    }
-
-    enum AsyncState {
-        SYNCHRONOUS,
-        ASYNCHRONOUS,
-        ONE_WAY,
-        ;
     }
 
     enum State {
@@ -529,18 +521,8 @@ public final class EJBClientInvocationContext extends Attachable {
     static final Object PROCEED_ASYNC = new Object();
 
     void proceedAsynchronously() {
-        assert !holdsLock(lock);
-        synchronized (lock) {
-            if (asyncState == AsyncState.SYNCHRONOUS) {
-                blockingCaller = false;
-                if (getInvokedMethod().getReturnType() == void.class) {
-                    asyncState = AsyncState.ONE_WAY;
-                    this.resultReady(NULL_RESPONSE);
-                } else {
-                    asyncState = AsyncState.ASYNCHRONOUS;
-                }
-                lock.notifyAll();
-            }
+        if (getInvokedMethod().getReturnType() == void.class) {
+            this.resultReady(NULL_RESPONSE);
         }
     }
 
@@ -581,13 +563,6 @@ public final class EJBClientInvocationContext extends Attachable {
                     if (invocationTimeout <= 0) {
                         // no timeout; lighter code path
                         while (state.isWaiting()) {
-                            switch (asyncState) {
-                                case ASYNCHRONOUS:
-                                    return PROCEED_ASYNC;
-                                case ONE_WAY:
-                                    this.resultReady(NULL_RESPONSE);
-                                    break;
-                            }
                             try {
                                 lock.wait();
                             } catch (InterruptedException e) {
@@ -607,13 +582,6 @@ public final class EJBClientInvocationContext extends Attachable {
                                 }
                                 this.resultReady(new InvocationTimeoutResultProducer(invocationTimeout));
                                 break;
-                            }
-                            switch (asyncState) {
-                                case ASYNCHRONOUS:
-                                    return PROCEED_ASYNC;
-                                case ONE_WAY:
-                                    this.resultReady(NULL_RESPONSE);
-                                    break;
                             }
                             try {
                                 lock.wait(remaining / 1_000_000L, (int) (remaining % 1_000_000L));
@@ -640,10 +608,6 @@ public final class EJBClientInvocationContext extends Attachable {
         assert !holdsLock(lock);
         final EJBReceiverInvocationContext.ResultProducer resultProducer;
         synchronized (lock) {
-            if (asyncState != AsyncState.ONE_WAY) {
-                asyncState = AsyncState.ONE_WAY;
-                lock.notifyAll();
-            }
             if (state == State.DONE) {
                 return;
             }

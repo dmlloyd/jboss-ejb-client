@@ -179,12 +179,9 @@ final class EJBInvocationHandler<T> extends Attachable implements InvocationHand
 
                 if (! async && ! methodInfo.isClientAsync()) {
                     // wait for invocation to complete
-                    final Object value = invocationContext.awaitResponse(this);
-                    if (value != EJBClientInvocationContext.PROCEED_ASYNC) {
-                        return value;
-                    }
-                    // proceed asynchronously
+                    return invocationContext.awaitResponse(this);
                 }
+                // proceed asynchronously
                 invocationContext.setBlockingCaller(false);
                 // force async...
                 if (method.getReturnType() == Future.class) {
