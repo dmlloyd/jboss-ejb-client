@@ -717,7 +717,7 @@ public final class EJBClientContext extends Attachable implements Contextual<EJB
                 return doFirstMatchDiscovery(locatedAction, locator, filterSpec, fallbackFilterSpec, authenticationConfiguration, sslContext);
             } else if (weakAffinity instanceof URIAffinity || weakAffinity == Affinity.LOCAL) {
                 // try direct
-                final String scheme = affinity.getUri().getScheme();
+                final String scheme = weakAffinity.getUri().getScheme();
                 final EJBReceiver receiver = getTransportProvider(scheme);
                 if (receiver != null) {
                     return locatedAction.execute(receiver, locator, affinity, authenticationConfiguration, sslContext);
