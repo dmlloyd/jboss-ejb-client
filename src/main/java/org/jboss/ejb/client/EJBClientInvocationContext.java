@@ -18,11 +18,7 @@
 
 package org.jboss.ejb.client;
 
-import java.io.Serializable;
 import java.lang.reflect.Method;
-import java.net.URI;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -36,7 +32,6 @@ import javax.transaction.Transaction;
 
 import org.jboss.ejb._private.Logs;
 import org.jboss.ejb.client.annotation.ClientTransactionPolicy;
-import org.wildfly.common.Assert;
 import org.wildfly.security.auth.client.AuthenticationConfiguration;
 
 /**
@@ -45,7 +40,7 @@ import org.wildfly.security.auth.client.AuthenticationConfiguration;
  * @author <a href="mailto:david.lloyd@redhat.com">David M. Lloyd</a>
  * @author Jaikiran Pai
  */
-public final class EJBClientInvocationContext extends Attachable {
+public final class EJBClientInvocationContext extends AbstractInvocationContext {
 
     private static final Logs log = Logs.MAIN;
 
@@ -55,7 +50,6 @@ public final class EJBClientInvocationContext extends Attachable {
 
     // Contextual stuff
     private final EJBInvocationHandler<?> invocationHandler;
-    private final EJBClientContext ejbClientContext;
 
     // Invocation data
     private final Object invokedProxy;
@@ -67,30 +61,22 @@ public final class EJBClientInvocationContext extends Attachable {
     private final Object lock = new Object();
     private EJBReceiverInvocationContext.ResultProducer resultProducer;
 
-    // selected target receiver
-    private EJBReceiver receiver;
-    private URI destination;
-    private Affinity targetAffinity;
-    private EJBLocator<?> locator;
     private State state = State.WAITING;
     private Object cachedResult;
-    private Map<String, Object> contextData;
 
     private int interceptorChainIndex;
     private boolean resultDone;
     private boolean blockingCaller;
     private Transaction transaction;
-    private Affinity weakAffinity = Affinity.NONE;
     private AuthenticationConfiguration authenticationConfiguration;
     private SSLContext sslContext;
 
     EJBClientInvocationContext(final EJBInvocationHandler<?> invocationHandler, final EJBClientContext ejbClientContext, final Object invokedProxy, final Object[] parameters, final EJBProxyInformation.ProxyMethodInfo methodInfo) {
+        super(invocationHandler.getLocator(), ejbClientContext);
         this.invocationHandler = invocationHandler;
         this.invokedProxy = invokedProxy;
         this.parameters = parameters;
-        this.ejbClientContext = ejbClientContext;
         this.methodInfo = methodInfo;
-        this.locator = invocationHandler.getLocator();
     }
 
     enum State {
@@ -135,15 +121,6 @@ public final class EJBClientInvocationContext extends Attachable {
      */
     public <T> T removeProxyAttachment(final AttachmentKey<T> key) {
         return invocationHandler.removeAttachment(key);
-    }
-
-    /**
-     * Get the EJB client context associated with this invocation.
-     *
-     * @return the EJB client context
-     */
-    public EJBClientContext getClientContext() {
-        return ejbClientContext;
     }
 
     /**
@@ -231,41 +208,6 @@ public final class EJBClientInvocationContext extends Attachable {
     }
 
     /**
-     * Get the context data.  This same data will be made available verbatim to
-     * server-side interceptors via the {@code InvocationContext.getContextData()} method, and thus
-     * can be used to pass data from the client to the server (as long as all map values are
-     * {@link Serializable}).
-     *
-     * @return the context data
-     */
-    public Map<String, Object> getContextData() {
-        final Map<String, Object> contextData = this.contextData;
-        if (contextData == null) {
-            return this.contextData = new LinkedHashMap<String, Object>();
-        } else {
-            return contextData;
-        }
-    }
-
-    /**
-     * Get the locator for the invocation target.
-     *
-     * @return the locator
-     */
-    public EJBLocator<?> getLocator() {
-        return locator;
-    }
-
-    /**
-     * Set the locator for the invocation target.
-     *
-     * @param locator the locator for the invocation target
-     */
-    public <T> void setLocator(final EJBLocator<T> locator) {
-        this.locator = locator;
-    }
-
-    /**
      * Determine whether this invocation is currently blocking the calling thread.
      *
      * @return {@code true} if the calling thread is being blocked; {@code false} otherwise
@@ -285,46 +227,6 @@ public final class EJBClientInvocationContext extends Attachable {
         synchronized (lock) {
             this.blockingCaller = blockingCaller;
         }
-    }
-
-    /**
-     * Get the resolved destination of this invocation.  If the destination is not yet decided, {@code null} is
-     * returned.
-     *
-     * @return the resolved destination of this invocation, or {@code null} if it is not yet known
-     */
-    public URI getDestination() {
-        return destination;
-    }
-
-    /**
-     * Set the resolved destination of this invocation.  The destination must be decided by the end of the interceptor
-     * chain, otherwise an exception will result.
-     *
-     * @param destination the resolved destination of this invocation
-     */
-    public void setDestination(final URI destination) {
-        this.destination = destination;
-    }
-
-    /**
-     * Get the resolved target affinity of this invocation.  If the target affinity is not yet decided, {@code null}
-     * is returned.  The target affinity is retained only for the lifetime of the invocation; it may be used to aid
-     * in resolving the {@linkplain #setDestination(URI) destination to set}.
-     *
-     * @return the resolved target affinity of this invocation, or {@code null} if it is not yet known
-     */
-    public Affinity getTargetAffinity() {
-        return targetAffinity;
-    }
-
-    /**
-     * Set the resolved target affinity of this invocation.
-     *
-     * @param targetAffinity the resolved target affinity of this invocation
-     */
-    public void setTargetAffinity(final Affinity targetAffinity) {
-        this.targetAffinity = targetAffinity;
     }
 
     /**
@@ -448,24 +350,6 @@ public final class EJBClientInvocationContext extends Attachable {
     }
 
     /**
-     * Get the EJB receiver associated with this invocation.
-     *
-     * @return the EJB receiver
-     */
-    EJBReceiver getReceiver() {
-        return receiver;
-    }
-
-    /**
-     * Set the EJB receiver associated with this invocation.
-     *
-     * @param receiver the EJB receiver associated with this invocation
-     */
-    void setReceiver(final EJBReceiver receiver) {
-        this.receiver = receiver;
-    }
-
-    /**
      * Get the invoked proxy object.
      *
      * @return the invoked proxy
@@ -520,25 +404,6 @@ public final class EJBClientInvocationContext extends Attachable {
      */
     public void setTransaction(final Transaction transaction) {
         this.transaction = transaction;
-    }
-
-    /**
-     * Get the invocation weak affinity.
-     *
-     * @return the invocation weak affinity, or {@link Affinity#NONE} if none (not {@code null})
-     */
-    public Affinity getWeakAffinity() {
-        return weakAffinity;
-    }
-
-    /**
-     * Set the invocation weak affinity.
-     *
-     * @param weakAffinity the invocation weak affinity (must not be {@code null})
-     */
-    public void setWeakAffinity(final Affinity weakAffinity) {
-        Assert.checkNotNullParam("weakAffinity", weakAffinity);
-        this.weakAffinity = weakAffinity;
     }
 
     AuthenticationConfiguration getAuthenticationConfiguration() {
