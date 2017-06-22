@@ -165,4 +165,13 @@ public abstract class AbstractInvocationContext extends Attachable {
         Assert.checkNotNullParam("weakAffinity", weakAffinity);
         this.weakAffinity = weakAffinity;
     }
+
+    /**
+     * Get the invoked view class.
+     *
+     * @return the invoked view class
+     */
+    public Class<?> getViewClass() {
+        return locator.getViewType();
+    }
 }

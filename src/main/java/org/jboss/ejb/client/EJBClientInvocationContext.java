@@ -19,6 +19,7 @@
 package org.jboss.ejb.client;
 
 import java.lang.reflect.Method;
+import java.net.URI;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -244,12 +245,9 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                     throw Logs.MAIN.sendRequestCalledDuringWrongPhase();
                 }
                 if (chain.length == idx) {
-                    final EJBReceiver receiver = this.receiver;
-                    if (receiver == null) {
-                        performInvocation(getLocator());
-                    } else {
-                        receiver.processInvocation(receiverInvocationContext);
-                    }
+                    final URI destination = getDestination();
+                    final EJBReceiver receiver = getClientContext().resolveReceiver(destination, locator);
+                    receiver.processInvocation(receiverInvocationContext);
                 } else {
                     chain[idx].getInterceptorInstance().handleInvocation(this);
                 }
@@ -262,20 +260,6 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                 throw e;
             }
         }
-    }
-
-    private <T> void performInvocation(EJBLocator<T> locator) throws Exception {
-
-        if (Logs.INVOCATION.isDebugEnabled()) {
-            Logs.INVOCATION.debugf("Calling performInvocation(module = %s, strong affinity = %s): ", locator.getIdentifier(), locator.getAffinity());
-        }
-        ejbClientContext.performLocatedAction(locator, (receiver, originalLocator, newAffinity, authenticationConfiguration, sslContext) -> {
-            if (receiver == null) {
-                throw Logs.MAIN.noEJBReceiverAvailable(getLocator());
-            }
-            receiver.processInvocation(receiverInvocationContext);
-            return null;
-        }, weakAffinity, authenticationConfiguration, sslContext);
     }
 
     /**
@@ -374,15 +358,6 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
      */
     public Object[] getParameters() {
         return parameters;
-    }
-
-    /**
-     * Get the invoked view class.
-     *
-     * @return the invoked view class
-     */
-    public Class<?> getViewClass() {
-        return invocationHandler.getLocator().getViewType();
     }
 
     /**
