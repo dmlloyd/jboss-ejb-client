@@ -247,6 +247,7 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                 if (chain.length == idx) {
                     final URI destination = getDestination();
                     final EJBReceiver receiver = getClientContext().resolveReceiver(destination, locator);
+                    setReceiver(receiver);
                     receiver.processInvocation(receiverInvocationContext);
                 } else {
                     chain[idx].getInterceptorInstance().handleInvocation(this);
