@@ -324,6 +324,9 @@ public interface Logs extends BasicLogger {
     @Message(id = 79, value = "Unable to discover destination for request for EJB %s")
     IllegalStateException noDestinationEstablished(EJBLocator<?> locator);
 
+    @Message(id = 80, value = "Request not sent")
+    IllegalStateException requestNotSent();
+
     // Proxy API errors
 
     @Message(id = 100, value = "Object '%s' is not a valid proxy object")

@@ -61,7 +61,7 @@ public final class EJBSessionCreationInvocationContext extends AbstractInvocatio
             }
             if (chain.length == idx) {
                 final URI destination = getDestination();
-                final EJBReceiver receiver = getClientContext().resolveReceiver(destination, locator);
+                final EJBReceiver receiver = getClientContext().resolveReceiver(destination, getLocator());
                 setReceiver(receiver);
                 final StatefulEJBLocator<?> sessionLocator = receiver.createSession(new EJBReceiverSessionCreationContext(this, authenticationConfiguration, sslContext));
                 if (sessionLocator == null) {
