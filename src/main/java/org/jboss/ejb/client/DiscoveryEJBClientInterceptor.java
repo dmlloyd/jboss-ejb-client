@@ -84,24 +84,54 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
     }
 
     public Object handleInvocationResult(final EJBClientInvocationContext context) throws Exception {
-        return context.getResult();
-    }
-
-    public StatefulEJBLocator<?> handleSessionCreation(final EJBSessionCreationInvocationContext context) throws Exception {
-        List<Throwable> problems = executeDiscovery(context);
-        final StatefulEJBLocator<?> locator;
-        try {
-            locator = context.proceed();
-        } catch (Exception t) {
-            throw withSuppressed(t, problems);
-        }
-        if (context.getWeakAffinity() == Affinity.NONE) {
+        final Object result = context.getResult();
+        if (context.getLocator().getAffinity() instanceof ClusterAffinity && context.getWeakAffinity() == Affinity.NONE) {
             // set the weak affinity to the location of the session!
             final Affinity targetAffinity = context.getTargetAffinity();
             if (targetAffinity != null) {
                 context.setWeakAffinity(targetAffinity);
             } else {
-                context.setWeakAffinity(new URIAffinity(context.getDestination()));
+                final URI destination = context.getDestination();
+                if (destination != null) {
+                    context.setWeakAffinity(new URIAffinity(destination));
+                }
+                // if destination is null, then an interceptor set the location
+            }
+        }
+        return result;
+    }
+
+    public StatefulEJBLocator<?> handleSessionCreation(final EJBSessionCreationInvocationContext context) throws Exception {
+        List<Throwable> problems = executeDiscovery(context);
+        StatefulEJBLocator<?> locator;
+        try {
+            locator = context.proceed();
+        } catch (Exception t) {
+            throw withSuppressed(t, problems);
+        }
+        if (locator.getAffinity() == Affinity.NONE) {
+            // set the strong affinity to the location of the session!
+            final Affinity targetAffinity = context.getTargetAffinity();
+            if (targetAffinity != null) {
+                return locator.withNewAffinity(targetAffinity);
+            } else {
+                final URI destination = context.getDestination();
+                if (destination != null) {
+                    return locator.withNewAffinity(new URIAffinity(destination));
+                }
+                // if destination is null, then an interceptor set the location
+            }
+        } else if (locator.getAffinity() instanceof ClusterAffinity && context.getWeakAffinity() == Affinity.NONE) {
+            // set the weak affinity to the location of the session!
+            final Affinity targetAffinity = context.getTargetAffinity();
+            if (targetAffinity != null) {
+                context.setWeakAffinity(targetAffinity);
+            } else {
+                final URI destination = context.getDestination();
+                if (destination != null) {
+                    context.setWeakAffinity(new URIAffinity(destination));
+                }
+                // if destination is null, then an interceptor set the location
             }
         }
         return locator;
