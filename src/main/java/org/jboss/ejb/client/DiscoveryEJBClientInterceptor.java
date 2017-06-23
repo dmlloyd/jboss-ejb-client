@@ -77,9 +77,28 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
     public void handleInvocation(final EJBClientInvocationContext context) throws Exception {
         List<Throwable> problems = executeDiscovery(context);
         try {
-            context.sendRequest();
-        } catch (Exception t) {
-            throw withSuppressed(t, problems);
+            try {
+                context.sendRequest();
+            } catch (RequestSendFailedException e2) {
+                // retry if necessary
+                if (context.getLocator().getAffinity() instanceof ClusterAffinity) {
+                    final Affinity weakAffinity = context.getWeakAffinity();
+                    if (weakAffinity instanceof NodeAffinity) {
+                        // assume the node has gone down and retry it
+                        context.setWeakAffinity(Affinity.NONE);
+                        context.setDestination(null);
+                        context.setTargetAffinity(null);
+                        problems = executeDiscovery(context);
+                        context.sendRequest();
+                    } else {
+                        throw e2;
+                    }
+                } else {
+                    throw e2;
+                }
+            }
+        } catch (Exception e) {
+            throw withSuppressed(e, problems);
         }
     }
 
