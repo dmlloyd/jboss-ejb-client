@@ -69,7 +69,7 @@ public final class EJBReceiverInvocationContext extends AbstractReceiverInvocati
      *
      * @param cause the failure cause (must not be {@code null})
      */
-    public void requestFailed(Throwable cause) {
+    public void requestFailed(Exception cause) {
         Assert.checkNotNullParam("cause", cause);
         clientInvocationContext.failed(cause);
     }

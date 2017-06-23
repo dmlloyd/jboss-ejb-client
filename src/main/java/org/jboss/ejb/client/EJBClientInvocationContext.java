@@ -310,7 +310,8 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
         final EJBReceiverInvocationContext.ResultProducer resultProducer = this.resultProducer;
 
         if (resultProducer == null) {
-            throw Logs.MAIN.discardResultCalledDuringWrongPhase();
+            // no result to discard
+            return;
         }
 
         resultProducer.discardResult();
@@ -457,11 +458,9 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                         while (state.isWaiting()) {
                             if (remaining == 0) {
                                 // timed out
-                                if (state != State.CANCEL_REQ) {
-                                    state = State.CANCEL_REQ;
-                                    cancel = true;
-                                }
-                                this.failed(new TimeoutException("No invocation response received in " + invocationTimeout + " milliseconds"));
+                                state = State.FAILED;
+                                cancel = true;
+                                this.cachedResult = new TimeoutException("No invocation response received in " + invocationTimeout + " milliseconds");
                                 break;
                             }
                             try {
@@ -475,9 +474,13 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                 } finally {
                     blockingCaller = false;
                 }
+                if (state == State.FAILED) {
+                    throw (Exception) cachedResult;
+                }
             }
             if (cancel) {
-                getReceiver().cancelInvocation(receiverInvocationContext, false);
+                final EJBReceiver receiver = getReceiver();
+                if (receiver != null) receiver.cancelInvocation(receiverInvocationContext, false);
             }
             return getResult();
         } finally {
@@ -515,7 +518,7 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
         }
     }
 
-    void failed(Throwable exception) {
+    void failed(Exception exception) {
         assert !holdsLock(lock);
         synchronized (lock) {
             switch (state) {
@@ -545,7 +548,8 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                 // a cancel request and change the current state
                 state = State.CANCEL_REQ;
             }
-            return getReceiver().cancelInvocation(receiverInvocationContext, mayInterruptIfRunning);
+            final EJBReceiver receiver = getReceiver();
+            return receiver != null && receiver.cancelInvocation(receiverInvocationContext, mayInterruptIfRunning);
         }
 
         public boolean isCancelled() {
