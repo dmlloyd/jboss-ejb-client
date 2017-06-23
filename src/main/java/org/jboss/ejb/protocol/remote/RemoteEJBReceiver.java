@@ -77,7 +77,7 @@ class RemoteEJBReceiver extends EJBReceiver {
                 ejbClientChannel = getClientChannel(peerIdentity.getConnection());
             } catch (IOException e) {
                 // should generally not be possible but we should handle it cleanly regardless
-                attachment.resultReady(new EJBReceiverInvocationContext.ResultProducer.Failed(new RequestSendFailedException(e, true)));
+                attachment.requestFailed(new RequestSendFailedException(e, false));
                 return;
             }
             attachment.getClientInvocationContext().putAttachment(EJBCC_KEY, ejbClientChannel);
@@ -89,7 +89,7 @@ class RemoteEJBReceiver extends EJBReceiver {
         }
 
         public void handleFailed(final IOException exception, final EJBReceiverInvocationContext attachment) {
-            attachment.resultReady(new EJBReceiverInvocationContext.ResultProducer.Failed(new RequestSendFailedException(exception, true)));
+            attachment.requestFailed(new RequestSendFailedException(exception, false));
         }
     };
 

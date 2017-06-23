@@ -247,6 +247,7 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                 if (chain.length == idx) {
                     final URI destination = getDestination();
                     final EJBReceiver receiver = getClientContext().resolveReceiver(destination, locator);
+                    reset();
                     setReceiver(receiver);
                     receiver.processInvocation(receiverInvocationContext);
                 } else {
@@ -334,6 +335,19 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
         // for whatever reason, we don't care
         resultProducer.discardResult();
         return;
+    }
+
+    void reset() {
+        final EJBReceiverInvocationContext.ResultProducer oldProducer;
+        synchronized (lock) {
+            oldProducer = this.resultProducer;
+            this.resultProducer = null;
+            state = State.WAITING;
+            lock.notifyAll();
+        }
+        if (oldProducer != null) {
+            oldProducer.discardResult();
+        }
     }
 
     /**
