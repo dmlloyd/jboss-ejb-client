@@ -405,7 +405,7 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
 
     void proceedAsynchronously() {
         if (getInvokedMethod().getReturnType() == void.class) {
-            this.discardResult();
+            resultReady(EJBReceiverInvocationContext.ResultProducer.NULL);
         }
     }
 

@@ -92,6 +92,11 @@ public final class EJBReceiverInvocationContext extends AbstractReceiverInvocati
     public interface ResultProducer {
 
         /**
+         * A result producer which produces a {@code null} return.
+         */
+        ResultProducer NULL = new Immediate(null);
+
+        /**
          * Get the result.
          *
          * @return the result
