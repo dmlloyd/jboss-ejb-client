@@ -166,6 +166,8 @@ final class EJBInvocationHandler<T> extends Attachable implements InvocationHand
         invocationContext.setLocator(locatorRef.get());
         invocationContext.setBlockingCaller(true);
         invocationContext.setWeakAffinity(getWeakAffinity());
+        invocationContext.setAuthenticationConfiguration(authenticationConfiguration);
+        invocationContext.setSSLContext(sslContext);
 
         try {
             // send the request
