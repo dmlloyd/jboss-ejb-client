@@ -93,7 +93,7 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
             } else {
                 final URI destination = context.getDestination();
                 if (destination != null) {
-                    context.setWeakAffinity(new URIAffinity(destination));
+                    context.setWeakAffinity(URIAffinity.forUri(destination));
                 }
                 // if destination is null, then an interceptor set the location
             }
@@ -117,7 +117,7 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
             } else {
                 final URI destination = context.getDestination();
                 if (destination != null) {
-                    return locator.withNewAffinity(new URIAffinity(destination));
+                    return locator.withNewAffinity(URIAffinity.forUri(destination));
                 }
                 // if destination is null, then an interceptor set the location
             }
@@ -129,7 +129,7 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
             } else {
                 final URI destination = context.getDestination();
                 if (destination != null) {
-                    context.setWeakAffinity(new URIAffinity(destination));
+                    context.setWeakAffinity(URIAffinity.forUri(destination));
                 }
                 // if destination is null, then an interceptor set the location
             }
@@ -180,8 +180,8 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
                 return doFirstMatchDiscovery(context, filterSpec, fallbackFilterSpec);
             } else if (weakAffinity instanceof URIAffinity || weakAffinity == Affinity.LOCAL) {
                 // try direct
-                context.setDestination(affinity.getUri());
-                context.setTargetAffinity(affinity);
+                context.setDestination(weakAffinity.getUri());
+                context.setTargetAffinity(weakAffinity);
             } else {
                 // regular cluster discovery
                 filterSpec = FilterSpec.all(
@@ -212,7 +212,7 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
                     context.setTargetAffinity(new NodeAffinity(nodeValue.toString()));
                 } else {
                     // just set the URI
-                    context.setTargetAffinity(new URIAffinity(location));
+                    context.setTargetAffinity(URIAffinity.forUri(location));
                 }
                 context.setDestination(location);
                 return queue.getProblems();
