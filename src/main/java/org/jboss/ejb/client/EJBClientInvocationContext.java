@@ -253,6 +253,7 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                     chain[idx].getInterceptorInstance().handleInvocation(this);
                 }
             } finally {
+                setReceiver(null);
                 interceptorChainIndex --;
             }
             return;

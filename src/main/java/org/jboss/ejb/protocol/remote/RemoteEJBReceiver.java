@@ -29,7 +29,6 @@ import java.security.PrivilegedAction;
 import javax.ejb.CreateException;
 import javax.net.ssl.SSLContext;
 
-import org.jboss.ejb.client.Affinity;
 import org.jboss.ejb.client.AttachmentKey;
 import org.jboss.ejb.client.EJBClientInvocationContext;
 import org.jboss.ejb.client.EJBLocator;
@@ -40,7 +39,6 @@ import org.jboss.ejb.client.EJBReceiverSessionCreationContext;
 import org.jboss.ejb.client.RequestSendFailedException;
 import org.jboss.ejb.client.StatefulEJBLocator;
 import org.jboss.ejb.client.StatelessEJBLocator;
-import org.jboss.ejb.client.URIAffinity;
 import org.jboss.remoting3.ClientServiceHandle;
 import org.jboss.remoting3.Connection;
 import org.jboss.remoting3.ConnectionPeerIdentity;
