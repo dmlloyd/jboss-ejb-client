@@ -289,6 +289,12 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
         }
     }
 
+    public void requestRetry() {
+        synchronized (lock) {
+            retryRequested = true;
+        }
+    }
+
     void sendRequestInitial() {
         assert checkState() == State.SENDING;
         for (;;) {

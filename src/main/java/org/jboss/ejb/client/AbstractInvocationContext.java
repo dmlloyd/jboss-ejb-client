@@ -174,4 +174,9 @@ public abstract class AbstractInvocationContext extends Attachable {
     public Class<?> getViewClass() {
         return locator.getViewType();
     }
+
+    /**
+     * Request that the current operation be retried if possible.
+     */
+    public abstract void requestRetry();
 }

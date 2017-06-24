@@ -78,4 +78,8 @@ public final class EJBSessionCreationInvocationContext extends AbstractInvocatio
             interceptorChainIndex --;
         }
     }
+
+    public void requestRetry() {
+        // no operation for now
+    }
 }

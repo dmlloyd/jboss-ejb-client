@@ -33,9 +33,13 @@ import java.net.URI;
 import java.security.PrivilegedAction;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
+
+import javax.ejb.NoSuchEJBException;
 
 import org.jboss.ejb._private.Logs;
 import org.jboss.ejb.client.annotation.ClientInterceptorPriority;
@@ -68,6 +72,8 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
      */
     public static final int PRIORITY = ClientInterceptorPriority.JBOSS_AFTER + 100;
 
+    private static final AttachmentKey<Set<URI>> BL_KEY = new AttachmentKey<>();
+
     /**
      * Construct a new instance.
      */
@@ -79,23 +85,9 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
         try {
             try {
                 context.sendRequest();
-            } catch (RequestSendFailedException e2) {
-                // retry if necessary
-                if (context.getLocator().getAffinity() instanceof ClusterAffinity) {
-                    final Affinity weakAffinity = context.getWeakAffinity();
-                    if (weakAffinity instanceof NodeAffinity) {
-                        // assume the node has gone down and retry it
-                        context.setWeakAffinity(Affinity.NONE);
-                        context.setDestination(null);
-                        context.setTargetAffinity(null);
-                        problems = executeDiscovery(context);
-                        context.sendRequest();
-                    } else {
-                        throw e2;
-                    }
-                } else {
-                    throw e2;
-                }
+            } catch (NoSuchEJBException | RequestSendFailedException e) {
+                processMissingTarget(context);
+                throw e;
             }
         } catch (Exception e) {
             throw withSuppressed(e, problems);
@@ -103,7 +95,13 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
     }
 
     public Object handleInvocationResult(final EJBClientInvocationContext context) throws Exception {
-        final Object result = context.getResult();
+        final Object result;
+        try {
+            result = context.getResult();
+        } catch (NoSuchEJBException | RequestSendFailedException e) {
+            processMissingTarget(context);
+            throw e;
+        }
         if (context.getLocator().getAffinity() instanceof ClusterAffinity && context.getWeakAffinity() == Affinity.NONE) {
             // set the weak affinity to the location of the session!
             final Affinity targetAffinity = context.getTargetAffinity();
@@ -125,6 +123,9 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
         StatefulEJBLocator<?> locator;
         try {
             locator = context.proceed();
+        } catch (NoSuchEJBException | RequestSendFailedException e) {
+            processMissingTarget(context);
+            throw withSuppressed(e, problems);
         } catch (Exception t) {
             throw withSuppressed(t, problems);
         }
@@ -154,6 +155,28 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
             }
         }
         return locator;
+    }
+
+    private void processMissingTarget(final AbstractInvocationContext context) {
+        final URI destination = context.getDestination();
+        if (destination == null) {
+            // nothing we can/should do.
+            return;
+        }
+        // Oops, we got some wrong information!
+        Set<URI> set = context.getAttachment(BL_KEY);
+        if (set == null) {
+            final Set<URI> appearing = context.putAttachmentIfAbsent(BL_KEY, set = new HashSet<>());
+            if (appearing != null) {
+                set = appearing;
+            }
+        }
+        set.add(destination);
+        // clear the weak affinity so that cluster invocations can be re-targeted.
+        context.setWeakAffinity(Affinity.NONE);
+        context.setTargetAffinity(null);
+        context.setDestination(null);
+        context.requestRetry();
     }
 
     ServicesQueue discover(final FilterSpec filterSpec) {
@@ -221,20 +244,23 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
     private List<Throwable> doFirstMatchDiscovery(AbstractInvocationContext context, final FilterSpec filterSpec, final FilterSpec fallbackFilterSpec) {
         Logs.INVOCATION.tracef("Performing first-match discovery(locator = %s, weak affinity = %s, filter spec = %s", context.getLocator(), context.getWeakAffinity(), filterSpec);
         final List<Throwable> problems;
+        final Set<URI> set = context.getAttachment(BL_KEY);
         try (final ServicesQueue queue = discover(filterSpec)) {
             ServiceURL serviceURL;
-            if ((serviceURL = queue.takeService()) != null) {
+            while ((serviceURL = queue.takeService()) != null) {
                 final URI location = serviceURL.getLocationURI();
-                // Got a match!  See if there's a node affinity to set for the invocation.
-                final AttributeValue nodeValue = serviceURL.getFirstAttributeValue(FILTER_ATTR_NODE);
-                if (nodeValue != null) {
-                    context.setTargetAffinity(new NodeAffinity(nodeValue.toString()));
-                } else {
-                    // just set the URI
-                    context.setTargetAffinity(URIAffinity.forUri(location));
+                if (set == null || ! set.contains(location)) {
+                    // Got a match!  See if there's a node affinity to set for the invocation.
+                    final AttributeValue nodeValue = serviceURL.getFirstAttributeValue(FILTER_ATTR_NODE);
+                    if (nodeValue != null) {
+                        context.setTargetAffinity(new NodeAffinity(nodeValue.toString()));
+                    } else {
+                        // just set the URI
+                        context.setTargetAffinity(URIAffinity.forUri(location));
+                    }
+                    context.setDestination(location);
+                    return queue.getProblems();
                 }
-                context.setDestination(location);
-                return queue.getProblems();
             }
             problems = queue.getProblems();
         } catch (InterruptedException e) {
@@ -266,16 +292,19 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
         Map<String, URI> nodes = new HashMap<>();
         final EJBClientContext clientContext = context.getClientContext();
         final List<Throwable> problems;
+        final Set<URI> set = context.getAttachment(BL_KEY);
         try (final ServicesQueue queue = discover(filterSpec)) {
             ServiceURL serviceURL;
             while ((serviceURL = queue.takeService()) != null) {
                 final URI location = serviceURL.getLocationURI();
-                final EJBReceiver transportProvider = clientContext.getTransportProvider(location.getScheme());
-                if (transportProvider != null && satisfiesSourceAddress(serviceURL, transportProvider)) {
-                    final AttributeValue nodeNameValue = serviceURL.getFirstAttributeValue(FILTER_ATTR_NODE);
-                    // should always be true, but no harm in checking
-                    if (nodeNameValue != null) {
-                        nodes.put(nodeNameValue.toString(), location);
+                if (set == null || ! set.contains(location)) {
+                    final EJBReceiver transportProvider = clientContext.getTransportProvider(location.getScheme());
+                    if (transportProvider != null && satisfiesSourceAddress(serviceURL, transportProvider)) {
+                        final AttributeValue nodeNameValue = serviceURL.getFirstAttributeValue(FILTER_ATTR_NODE);
+                        // should always be true, but no harm in checking
+                        if (nodeNameValue != null) {
+                            nodes.put(nodeNameValue.toString(), location);
+                        }
                     }
                 }
             }
