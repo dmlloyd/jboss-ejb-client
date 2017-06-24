@@ -109,7 +109,6 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
 
         READY(false),
         CONSUMING(false),
-        DISCARDING(false),
         DONE(false),
         ;
 
@@ -267,6 +266,7 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                 suppressedExceptions = new ArrayList<>();
             }
             suppressedExceptions.add(() -> cause);
+            checkStateInvariants();
         }
     }
 
@@ -285,6 +285,7 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                 suppressedExceptions = new ArrayList<>();
             }
             suppressedExceptions.add(cause);
+            checkStateInvariants();
         }
     }
 
@@ -296,42 +297,43 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                 sendRequest();
                 // back to the start of the chain; decide what to do next.
                 synchronized (lock) {
-                    assert state == State.SENT;
-                    // from here we can go to: READY, or WAITING, or retry SENDING.
-                    Supplier<? extends Throwable> pendingFailure = this.pendingFailure;
-                    EJBReceiverInvocationContext.ResultProducer resultProducer = this.resultProducer;
-                    if (resultProducer != null) {
-                        // READY, even if we have a pending failure.
-                        if (pendingFailure != null) {
-                            addSuppressed(pendingFailure);
-                            this.pendingFailure = null;
-                        }
-                        state = State.READY;
-                        lock.notifyAll();
-                        return;
-                    }
-                    // now see if we're retrying or returning.
-                    if (pendingFailure != null) {
-                        // either READY (with exception) or retry SENDING.
-                        if (! retryRequested || remainingRetries == 0) {
-                            // nobody wants retry, or there are none left; READY (with exception).
-                            this.resultProducer = new ThrowableResult(pendingFailure);
-                            this.pendingFailure = null;
-                            // in case we've gone asynchronous
-                            lock.notifyAll();
-                            state = State.READY;
+                    try {
+                        assert state == State.SENT;
+                        // from here we can go to: READY, or WAITING, or retry SENDING.
+                        Supplier<? extends Throwable> pendingFailure = this.pendingFailure;
+                        EJBReceiverInvocationContext.ResultProducer resultProducer = this.resultProducer;
+                        if (resultProducer != null) {
+                            // READY, even if we have a pending failure.
+                            if (pendingFailure != null) {
+                                addSuppressed(pendingFailure);
+                                this.pendingFailure = null;
+                            }
+                            transition(State.READY);
                             return;
-                        } else {
-                            // redo the loop
-                            state = State.SENDING;
-                            retryRequested = false;
-                            remainingRetries --;
-                            addSuppressed(pendingFailure);
-                            continue;
                         }
+                        // now see if we're retrying or returning.
+                        if (pendingFailure != null) {
+                            // either READY (with exception) or retry SENDING.
+                            if (! retryRequested || remainingRetries == 0) {
+                                // nobody wants retry, or there are none left; READY (with exception).
+                                this.resultProducer = new ThrowableResult(pendingFailure);
+                                this.pendingFailure = null;
+                                // in case we've gone asynchronous
+                                transition(State.READY);
+                                return;
+                            } else {
+                                // redo the loop
+                                state = State.SENDING;
+                                retryRequested = false;
+                                remainingRetries --;
+                                addSuppressed(pendingFailure);
+                                continue;
+                            }
+                        }
+                        transition(State.WAITING);
+                    } finally {
+                        checkStateInvariants();
                     }
-                    state = State.WAITING;
-                    lock.notifyAll();
                 }
                 // return to invocation handler
                 return;
@@ -339,37 +341,43 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                 // back to the start of the chain; decide what to do next.
                 synchronized (lock) {
                     assert state == State.SENT;
-                    // from here we can go to: FAILED, READY, or retry SENDING.
-                    Supplier<? extends Throwable> pendingFailure = this.pendingFailure;
-                    EJBReceiverInvocationContext.ResultProducer resultProducer = this.resultProducer;
-                    if (resultProducer != null) {
-                        // READY, even if we have a pending failure.
-                        if (pendingFailure != null) {
-                            addSuppressed(t);
-                            addSuppressed(pendingFailure);
+                    try {
+                        // from here we can go to: FAILED, READY, or retry SENDING.
+                        Supplier<? extends Throwable> pendingFailure = this.pendingFailure;
+                        EJBReceiverInvocationContext.ResultProducer resultProducer = this.resultProducer;
+                        if (resultProducer != null) {
+                            // READY, even if we have a pending failure.
+                            if (pendingFailure != null) {
+                                addSuppressed(t);
+                                addSuppressed(pendingFailure);
+                                this.pendingFailure = null;
+                            }
+                            transition(State.READY);
+                            return;
+                        }
+                        // FAILED, or retry SENDING.
+                        if (! retryRequested || remainingRetries == 0) {
+                            // nobody wants retry, or there are none left; go to FAILED
+                            if (pendingFailure != null) {
+                                addSuppressed(pendingFailure);
+                            }
+                            if (t instanceof Exception) {
+                                this.resultProducer = new EJBReceiverInvocationContext.ResultProducer.Failed((Exception) t);
+                            } else {
+                                this.resultProducer = new EJBReceiverInvocationContext.ResultProducer.Failed(new UndeclaredThrowableException(t));
+                            }
                             this.pendingFailure = null;
+                            transition(State.READY);
+                            return;
                         }
-                        state = State.READY;
-                        lock.notifyAll();
-                        return;
+                        // retry SENDING
+                        setReceiver(null);
+                        transition(State.SENDING);
+                        retryRequested = false;
+                        remainingRetries --;
+                    } finally {
+                        checkStateInvariants();
                     }
-                    // FAILED, or retry SENDING.
-                    if (! retryRequested || remainingRetries == 0) {
-                        // nobody wants retry, or there are none left; go to FAILED
-                        if (pendingFailure != null) {
-                            addSuppressed(pendingFailure);
-                        }
-                        this.pendingFailure = () -> t;
-                        state = State.READY;
-                        // in case we've gone asynchronous
-                        lock.notifyAll();
-                        return;
-                    }
-                    // retry SENDING
-                    setReceiver(null);
-                    state = State.SENDING;
-                    retryRequested = false;
-                    remainingRetries --;
                 }
                 // record for later
                 addSuppressed(t);
@@ -392,6 +400,8 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
      * @throws Exception if the request was not successfully sent
      */
     public void sendRequest() throws Exception {
+        final Object lock = this.lock;
+        Assert.assertNotHoldsLock(lock);
         final EJBClientInterceptorInformation[] chain = interceptorList.getInformation();
         synchronized (lock) {
             if (state != State.SENDING) {
@@ -400,37 +410,67 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
         }
         final int idx = interceptorChainIndex ++;
         try {
-            if (chain.length == idx) {
-                if (cancelRequested) {
-                    synchronized (lock) {
-                        state = State.SENT;
-                    }
+            if (cancelRequested) {
+                synchronized (lock) {
+                    transition(State.SENT);
                     resultReady(CANCELLED);
-                } else {
-                    // End of the chain processing; deliver to receiver or throw an exception.
-                    final URI destination = getDestination();
-                    final EJBReceiver receiver = getClientContext().resolveReceiver(destination, getLocator());
-                    setReceiver(receiver);
+                    checkStateInvariants();
+                }
+            } else if (chain.length == idx) {
+                // End of the chain processing; deliver to receiver or throw an exception.
+                final URI destination = getDestination();
+                final EJBReceiver receiver;
+                try {
+                    receiver = getClientContext().resolveReceiver(destination, getLocator());
+                } catch (Throwable t) {
                     synchronized (lock) {
-                        state = State.SENT;
+                        if (state != State.SENT) {
+                            transition(State.SENT);
+                        }
+                        checkStateInvariants();
                     }
+                    throw t;
+                }
+                setReceiver(receiver);
+                synchronized (lock) {
+                    transition(State.SENT);
+                    checkStateInvariants();
+                }
+                try {
                     receiver.processInvocation(receiverInvocationContext);
+                } catch (Throwable t) {
+                    synchronized (lock) {
+                        if (state != State.SENT) {
+                            transition(State.SENT);
+                        }
+                        checkStateInvariants();
+                    }
+                    throw t;
                 }
             } else {
-                chain[idx].getInterceptorInstance().handleInvocation(this);
+                try {
+                    chain[idx].getInterceptorInstance().handleInvocation(this);
+                } catch (Throwable t) {
+                    synchronized (lock) {
+                        if (state != State.SENT) {
+                            transition(State.SENT);
+                        }
+                        checkStateInvariants();
+                    }
+                    throw t;
+                }
                 synchronized (lock) {
-                    if (state != State.SENT) {
-                        assert state == State.SENDING;
-                        state = State.SENT;
-                        throw Logs.INVOCATION.requestNotSent();
+                    try {
+                        if (state != State.SENT) {
+                            assert state == State.SENDING;
+                            transition(State.SENT);
+                            throw Logs.INVOCATION.requestNotSent();
+                        }
+                    } finally {
+                        checkStateInvariants();
                     }
                 }
             }
-        } catch (Throwable t) {
-            synchronized (lock) {
-                state = State.SENT;
-            }
-            throw t;
         } finally {
             interceptorChainIndex--;
         }
@@ -451,27 +491,36 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
         final EJBReceiverInvocationContext.ResultProducer resultProducer;
         Throwable fail = null;
         final int idx = this.interceptorChainIndex;
+        final Object lock = this.lock;
         synchronized (lock) {
-            if (idx == 0) {
-                while (state == State.CONSUMING) try {
-                    lock.wait();
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw Logs.MAIN.operationInterrupted();
-                }
-                if (state == State.DONE) {
-                    Supplier<? extends Throwable> pendingFailure = this.pendingFailure;
-                    if (pendingFailure != null) {
-                        fail = pendingFailure.get();
-                    } else {
-                        return cachedResult;
+            try {
+                if (idx == 0) {
+                    while (state == State.CONSUMING) try {
+                        checkStateInvariants();
+                        lock.wait();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw Logs.MAIN.operationInterrupted();
                     }
-                } else if (state != State.READY) {
-                    throw Logs.MAIN.getResultCalledDuringWrongPhase();
+                    if (state == State.DONE) {
+                        Supplier<? extends Throwable> pendingFailure = this.pendingFailure;
+                        if (pendingFailure != null) {
+                            fail = pendingFailure.get();
+                            if (fail == null) {
+                                return cachedResult;
+                            }
+                        } else {
+                            return cachedResult;
+                        }
+                    } else if (state != State.READY) {
+                        throw Logs.MAIN.getResultCalledDuringWrongPhase();
+                    }
+                    transition(State.CONSUMING);
                 }
-                state = State.CONSUMING;
+                resultProducer = this.resultProducer;
+            } finally {
+                checkStateInvariants();
             }
-            resultProducer = this.resultProducer;
         }
         if (fail != null) try {
             throw fail;
@@ -491,18 +540,19 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                 }
                 if (idx == 0) {
                     synchronized (lock) {
-                        state = State.DONE;
+                        transition(State.DONE);
                         pendingFailure = null;
                         suppressedExceptions = null;
                         cachedResult = result;
-                        lock.notifyAll();
+                        this.resultProducer = null;
+                        checkStateInvariants();
                     }
                 }
                 return result;
             } catch (Throwable t) {
                 if (idx == 0) {
                     synchronized (lock) {
-                        state = State.DONE;
+                        this.resultProducer = null;
                         pendingFailure = () -> t;
                         List<Supplier<? extends Throwable>> suppressedExceptions = this.suppressedExceptions;
                         if (suppressedExceptions != null) {
@@ -513,7 +563,8 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                                 } catch (Throwable ignored) {}
                             }
                         }
-                        lock.notifyAll();
+                        transition(State.DONE);
+                        checkStateInvariants();
                     }
                 }
                 throw t;
@@ -540,15 +591,17 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
     }
 
     void resultReady(EJBReceiverInvocationContext.ResultProducer resultProducer) {
+        Assert.checkNotNullParam("resultProducer", resultProducer);
         synchronized (lock) {
             if (state.isWaiting()) {
                 this.resultProducer = resultProducer;
                 if (state == State.WAITING) {
-                    state = State.READY;
-                    lock.notifyAll();
+                    transition(State.READY);
                 }
+                checkStateInvariants();
                 return;
             }
+            checkStateInvariants();
         }
         // for whatever reason, we don't care
         resultProducer.discardResult();
@@ -630,13 +683,101 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
     }
 
     /**
+     * Transition to a new state, guarded by assertions.
+     *
+     * @param newState the state to transition to (must not be {@code null})
+     */
+    private void transition(State newState) {
+        final Object lock = this.lock;
+        Assert.assertHoldsLock(lock);
+        final State oldState = this.state;
+        log.tracef("Transitioning %s from %s to %s", this, oldState, newState);
+        switch (oldState) {
+            case SENDING: {
+                assert newState == State.SENT;
+                break;
+            }
+            case SENT: {
+                assert newState == State.READY || newState == State.SENDING || newState == State.DONE || newState == State.WAITING;
+                break;
+            }
+            case WAITING: {
+                assert newState == State.DONE || newState == State.READY || newState == State.CONSUMING;
+                break;
+            }
+            case READY: {
+                assert newState == State.CONSUMING;
+                break;
+            }
+            case CONSUMING: {
+                assert newState == State.SENDING || newState == State.DONE;
+                break;
+            }
+            default: {
+                assert false;
+                break;
+            }
+        }
+        switch (newState) {
+            case WAITING:
+            case READY:
+            case DONE: {
+                lock.notifyAll();
+                break;
+            }
+        }
+        // everything is OK
+        this.state = newState;
+    }
+
+    /**
+     * Check the invariants of the current state with assertions before the caller releases the lock.
+     */
+    private void checkStateInvariants() {
+        final Object lock = this.lock;
+        Assert.assertHoldsLock(lock);
+        final State state = this.state;
+        switch (state) {
+            case SENDING: {
+                assert resultProducer == null && cachedResult == null && getReceiver() == null;
+                break;
+            }
+            case SENT: {
+                assert cachedResult == null;
+                break;
+            }
+            case WAITING: {
+                assert resultProducer == null && pendingFailure == null && cachedResult == null;
+                break;
+            }
+            case READY: {
+                assert resultProducer != null && pendingFailure == null && cachedResult == null;
+                break;
+            }
+            case CONSUMING: {
+                assert resultProducer != null && pendingFailure == null && cachedResult == null;
+                break;
+            }
+            case DONE: {
+                assert resultProducer == null && (pendingFailure == null || pendingFailure != null && cachedResult == null);
+                break;
+            }
+            default: {
+                assert false;
+                break;
+            }
+        }
+    }
+
+    /**
      * Wait to determine whether this invocation was cancelled.
      *
      * @return {@code true} if the invocation was cancelled; {@code false} if it completed or failed or the thread was
      *  interrupted
      */
     public boolean awaitCancellationResult() {
-        assert ! holdsLock(lock);
+        final Object lock = this.lock;
+        Assert.assertNotHoldsLock(lock);
         synchronized (lock) {
             for (;;) {
                 if (resultProducer == CANCELLED) {
@@ -645,6 +786,7 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                     return false;
                 }
                 try {
+                    checkStateInvariants();
                     lock.wait();
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
@@ -655,47 +797,67 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
     }
 
     Object awaitResponse() throws Exception {
-        assert !holdsLock(lock);
+        Assert.assertNotHoldsLock(lock);
         boolean intr = false, timedOut = false;
         try {
             final Object lock = this.lock;
             final long timeout = this.timeout;
             synchronized (lock) {
-                if (state == State.DONE) {
-                    final Supplier<? extends Throwable> pendingFailure = this.pendingFailure;
-                    if (pendingFailure != null) {
-                        try {
-                            throw pendingFailure.get();
-                        } catch (Exception | Error e) {
-                            throw e;
-                        } catch (Throwable t) {
-                            throw new UndeclaredThrowableException(t);
-                        }
-                    }
-                    return cachedResult;
-                }
                 try {
-                    if (timeout <= 0) {
-                        // no timeout; lighter code path
-                        while (state.isWaiting()) {
-                            try {
-                                lock.wait();
-                            } catch (InterruptedException e) {
-                                intr = true;
-                            }
-                        }
-                    } else {
-                        while (state.isWaiting()) {
-                            long remaining = max(0L, timeout - max(0L, System.nanoTime() - startTime));
-                            if (remaining == 0L) {
-                                // timed out
-                                timedOut = true;
+                    out: for (;;) {
+                        switch (state) {
+                            case SENDING:
+                            case SENT:
+                            case CONSUMING:
+                            case WAITING: {
+                                if (timeout <= 0) {
+                                    // no timeout; lighter code path
+                                    while (state.isWaiting()) {
+                                        try {
+                                            checkStateInvariants();
+                                            lock.wait();
+                                        } catch (InterruptedException e) {
+                                            intr = true;
+                                        }
+                                    }
+                                } else {
+                                    while (state.isWaiting()) {
+                                        long remaining = max(0L, timeout - max(0L, System.nanoTime() - startTime));
+                                        if (remaining == 0L) {
+                                            // timed out
+                                            timedOut = true;
+                                            break out;
+                                        }
+                                        try {
+                                            checkStateInvariants();
+                                            lock.wait(remaining / 1_000_000L, (int) (remaining % 1_000_000L));
+                                        } catch (InterruptedException e) {
+                                            intr = true;
+                                        }
+                                    }
+                                }
                                 break;
                             }
-                            try {
-                                lock.wait(remaining / 1_000_000L, (int) (remaining % 1_000_000L));
-                            } catch (InterruptedException e) {
-                                intr = true;
+                            case READY: {
+                                // we have to get the result, so break out of here.
+                                checkStateInvariants();
+                                break out;
+                            }
+                            case DONE: {
+                                checkStateInvariants();
+                                if (pendingFailure != null) {
+                                    try {
+                                        throw pendingFailure.get();
+                                    } catch (Error | Exception e) {
+                                        throw e;
+                                    } catch (Throwable t) {
+                                        throw new UndeclaredThrowableException(t);
+                                    }
+                                }
+                                return cachedResult;
+                            }
+                            default: {
+                                throw new IllegalStateException();
                             }
                         }
                     }
@@ -706,7 +868,7 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
             if (timedOut) {
                 resultReady(new ThrowableResult(() -> new TimeoutException("No invocation response received in " + timeout + " milliseconds")));
                 final EJBReceiver receiver = getReceiver();
-                if (receiver != null) receiver.cancelInvocation(receiverInvocationContext, false);
+                if (receiver != null) receiver.cancelInvocation(receiverInvocationContext, true);
             }
             return getResult();
         } finally {
@@ -715,6 +877,7 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
     }
 
     void setDiscardResult() {
+        final Object lock = this.lock;
         assert !holdsLock(lock);
         final EJBReceiverInvocationContext.ResultProducer resultProducer;
         synchronized (lock) {
@@ -722,10 +885,10 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
             this.resultProducer = EJBReceiverInvocationContext.ResultProducer.NULL;
             // result is waiting, discard it
             if (state == State.WAITING) {
-                state = State.DONE;
-                lock.notifyAll();
+                transition(State.DONE);
             }
             // fall out of the lock to discard the old result (if any)
+            checkStateInvariants();
         }
         if (resultProducer != null) resultProducer.discardResult();
     }
@@ -735,6 +898,7 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
     }
 
     void failed(Exception exception, Executor retryExecutor) {
+        final Object lock = this.lock;
         synchronized (lock) {
             switch (state) {
                 case CONSUMING:
@@ -742,7 +906,9 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                     // ignore
                     return;
                 }
-                case SENDING:
+                case SENDING: {
+                    throw new IllegalStateException();
+                }
                 case SENT: {
                     final Supplier<? extends Throwable> pendingFailure = this.pendingFailure;
                     if (pendingFailure != null) {
@@ -767,8 +933,8 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                             addSuppressed(pendingFailure);
                             this.pendingFailure = null;
                         }
-                        state = State.READY;
-                        lock.notifyAll();
+                        transition(State.READY);
+                        checkStateInvariants();
                         return;
                     }
                     // READY (with failure), or retry SENDING.
@@ -777,15 +943,14 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                         if (pendingFailure != null) {
                             addSuppressed(pendingFailure);
                         }
-                        this.pendingFailure = () -> exception;
-                        state = State.READY;
-                        // in case we've gone asynchronous
-                        lock.notifyAll();
+                        this.pendingFailure = null;
+                        this.resultProducer = new ThrowableResult(() -> exception);
+                        transition(State.READY);
+                        checkStateInvariants();
                         return;
                     }
                     // retry SENDING
                     setReceiver(null);
-                    state = State.SENDING;
                     retryRequested = false;
                     remainingRetries --;
 
@@ -793,6 +958,8 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                     addSuppressed(exception);
                     // redo the request
                     retryExecutor.execute(this::sendRequestInitial);
+                    transition(State.SENDING);
+                    checkStateInvariants();
                     return;
                 }
                 default: {
@@ -809,20 +976,29 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
         }
 
         public boolean cancel(final boolean mayInterruptIfRunning) {
+            final Object lock = EJBClientInvocationContext.this.lock;
             assert !holdsLock(lock);
             synchronized (lock) {
-                if (! state.isWaiting()) {
+                if (state == State.DONE) {
+                    // cannot cancel now; also resultProducer is gone
+                    return pendingFailure == CANCELLED_PRODUCER;
+                } else if (! state.isWaiting()) {
+                    // cannot cancel now
                     return resultProducer == CANCELLED;
+                } else {
+                    if (resultProducer == CANCELLED) {
+                        return true;
+                    }
+                    // at this point the task is running and we are allowed to interrupt it. So set
+                    // the cancel request flag and a fall out to send the request
+                    cancelRequested = true;
                 }
-                // at this point the task is running and we are allowed to interrupt it. So issue
-                // a cancel request
-                cancelRequested = true;
             }
             final EJBReceiver receiver = getReceiver();
             final boolean result = receiver != null && receiver.cancelInvocation(receiverInvocationContext, mayInterruptIfRunning);
             if (! result) {
                 synchronized (lock) {
-                    if (resultProducer == CANCELLED && ! state.isWaiting()) {
+                    if (resultProducer == CANCELLED || state == State.DONE && pendingFailure == CANCELLED_PRODUCER) {
                         return true;
                     }
                 }
@@ -831,76 +1007,35 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
         }
 
         public boolean isCancelled() {
+            final Object lock = EJBClientInvocationContext.this.lock;
             assert !holdsLock(lock);
             synchronized (lock) {
-                return resultProducer == CANCELLED;
+                return state == State.DONE ? pendingFailure == CANCELLED_PRODUCER : resultProducer == CANCELLED;
             }
         }
 
         public boolean isDone() {
+            final Object lock = EJBClientInvocationContext.this.lock;
             assert !holdsLock(lock);
             synchronized (lock) {
+                // TODO: this could give a false positive during retry.  To solve this we need a separate "retry in progress" flag
+                // TODO: we should also calculate whether the invocation timed out
                 return ! state.isWaiting();
             }
         }
 
         public Object get() throws InterruptedException, ExecutionException {
-            assert !holdsLock(lock);
-            EJBReceiverInvocationContext.ResultProducer resultProducer;
-            final long timeout = EJBClientInvocationContext.this.timeout;
-            boolean timedOut = false;
-            synchronized (lock) {
-                out: for (;;) {
-                    switch (state) {
-                        case SENDING:
-                        case SENT:
-                        case CONSUMING:
-                        case WAITING: {
-                            if (timeout <= 0) {
-                                lock.wait();
-                            } else {
-                                long remaining = max(0L, timeout - max(0L, System.nanoTime() - startTime));
-                                if (remaining == 0L) {
-                                    // timed out
-                                    timedOut = true;
-                                    resultProducer = null;
-                                    break out;
-                                }
-                                lock.wait(remaining / 1_000_000L, (int) (remaining % 1_000_000L));
-                            }
-                            break;
-                        }
-                        case READY: {
-                            // Change state to consuming, but don't notify since nobody but us can act on it.
-                            // Instead we'll notify after the result is consumed.
-                            state = State.CONSUMING;
-                            resultProducer = EJBClientInvocationContext.this.resultProducer;
-                            EJBClientInvocationContext.this.resultProducer = null;
-                            // we have to get the result, so break out of here.
-                            break out;
-                        }
-                        case DONE: {
-                            if (pendingFailure != null) {
-                                throw log.remoteInvFailed(pendingFailure.get());
-                            }
-                            return cachedResult;
-                        }
-                        default:
-                            throw new IllegalStateException();
-                    }
-                }
+            try {
+                return awaitResponse();
+            } catch (RuntimeException | ExecutionException | InterruptedException e) {
+                throw e;
+            } catch (Exception e) {
+                throw log.remoteInvFailed(e);
             }
-            if (timedOut) {
-                final TimeoutException timeoutException = new TimeoutException("No invocation response received in " + timeout + " milliseconds");
-                resultReady(new ThrowableResult(() -> timeoutException));
-                final EJBReceiver receiver = getReceiver();
-                if (receiver != null) receiver.cancelInvocation(receiverInvocationContext, false);
-                throw new ExecutionException(timeoutException);
-            }
-            return processResult(resultProducer);
         }
 
         public Object get(final long timeout, final TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
+            final Object lock = EJBClientInvocationContext.this.lock;
             assert !holdsLock(lock);
             final long handlerInvTimeout = invocationHandler.getInvocationTimeout();
             final long invocationTimeout = handlerInvTimeout != -1 ? handlerInvTimeout : getClientContext().getInvocationTimeout();
@@ -910,7 +1045,6 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                 return get();
             }
             long remaining = unit.toNanos(timeout);
-            final EJBReceiverInvocationContext.ResultProducer resultProducer;
             synchronized (lock) {
                 out: for (;;) {
                     switch (state) {
@@ -918,6 +1052,7 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                         case SENT:
                         case CONSUMING:
                         case WAITING: {
+                            checkStateInvariants();
                             if (remaining <= 0L) {
                                 throw log.timedOut();
                             }
@@ -926,15 +1061,12 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                             break;
                         }
                         case READY: {
-                            // Change state to consuming, but don't notify since nobody but us can act on it.
-                            // Instead we'll notify after the result is consumed.
-                            state = State.CONSUMING;
-                            resultProducer = EJBClientInvocationContext.this.resultProducer;
-                            EJBClientInvocationContext.this.resultProducer = null;
                             // we have to get the result, so break out of here.
+                            checkStateInvariants();
                             break out;
                         }
                         case DONE: {
+                            checkStateInvariants();
                             if (pendingFailure != null) {
                                 throw log.remoteInvFailed(pendingFailure.get());
                             }
@@ -945,41 +1077,14 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                     }
                 }
             }
-            return processResult(resultProducer);
-        }
-
-        private Object processResult(final EJBReceiverInvocationContext.ResultProducer resultProducer) throws ExecutionException {
-            // extract the result from the producer.
-            Object result;
+            // we've gotten the result
             try {
-                result = resultProducer.getResult();
-            } catch (Throwable t) {
-                synchronized (lock) {
-                    assert state == State.CONSUMING;
-                    state = State.DONE;
-                    List<Supplier<? extends Throwable>> suppressedExceptions = EJBClientInvocationContext.this.suppressedExceptions;
-                    if (suppressedExceptions != null) {
-                        EJBClientInvocationContext.this.suppressedExceptions = null;
-                        for (Supplier<? extends Throwable> supplier : suppressedExceptions) {
-                            try {
-                                t.addSuppressed(supplier.get());
-                            } catch (Throwable ignored) {}
-                        }
-                    }
-                    pendingFailure = () -> t;
-                    lock.notifyAll();
-                }
-                throw log.remoteInvFailed(t);
+                return getResult();
+            } catch (RuntimeException | ExecutionException | InterruptedException e) {
+                throw e;
+            } catch (Exception e) {
+                throw log.remoteInvFailed(e);
             }
-            synchronized (lock) {
-                assert state == State.CONSUMING;
-                state = State.DONE;
-                pendingFailure = null;
-                suppressedExceptions = null;
-                cachedResult = result;
-                lock.notifyAll();
-            }
-            return result;
         }
     }
 
@@ -1005,7 +1110,9 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
         }
     }
 
-    static final ThrowableResult CANCELLED = new ThrowableResult(Logs.INVOCATION::requestCancelled);
+    static final Supplier<Throwable> CANCELLED_PRODUCER = Logs.INVOCATION::requestCancelled;
+
+    static final ThrowableResult CANCELLED = new ThrowableResult(CANCELLED_PRODUCER);
 
     static final ThrowableResult ONE_WAY = new ThrowableResult(Logs.INVOCATION::oneWayInvocation);
 }

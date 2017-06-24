@@ -157,6 +157,15 @@ public final class EJBReceiverInvocationContext extends AbstractReceiverInvocati
                 throw cause.get();
             }
 
+            /**
+             * Get the exception supplier.
+             *
+             * @return the exception supplier (not {@code null})
+             */
+            public Supplier<Exception> getExceptionSupplier() {
+                return cause;
+            }
+
             public void discardResult() {
             }
         }
