@@ -43,7 +43,6 @@ import javax.ejb.NoSuchEJBException;
 
 import org.jboss.ejb._private.Logs;
 import org.jboss.ejb.client.annotation.ClientInterceptorPriority;
-import org.kohsuke.MetaInfServices;
 import org.wildfly.common.net.CidrAddress;
 import org.wildfly.common.net.Inet;
 import org.wildfly.discovery.AttributeValue;
@@ -60,7 +59,6 @@ import org.wildfly.discovery.ServicesQueue;
  *
  * @author <a href="mailto:david.lloyd@redhat.com">David M. Lloyd</a>
  */
-@MetaInfServices
 @ClientInterceptorPriority(DiscoveryEJBClientInterceptor.PRIORITY)
 public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor {
     private static final Supplier<Discovery> DISCOVERY_SUPPLIER = doPrivileged((PrivilegedAction<Supplier<Discovery>>) Discovery.getContextManager()::getPrivilegedSupplier);

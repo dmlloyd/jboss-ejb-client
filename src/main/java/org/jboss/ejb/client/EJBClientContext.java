@@ -44,6 +44,7 @@ import java.util.stream.Collectors;
 import javax.net.ssl.SSLContext;
 
 import org.jboss.ejb._private.Logs;
+import org.jboss.ejb.protocol.remote.RemotingEJBClientInterceptor;
 import org.wildfly.common.Assert;
 import org.wildfly.common.context.ContextManager;
 import org.wildfly.common.context.Contextual;
@@ -110,7 +111,9 @@ public final class EJBClientContext extends Attachable implements Contextual<EJB
     };
 
     static final InterceptorList defaultInterceptors = new InterceptorList(new EJBClientInterceptorInformation[] {
-        EJBClientInterceptorInformation.forClass(TransactionInterceptor.class)
+        EJBClientInterceptorInformation.forClass(TransactionInterceptor.class),
+        EJBClientInterceptorInformation.forClass(DiscoveryEJBClientInterceptor.class),
+        EJBClientInterceptorInformation.forClass(RemotingEJBClientInterceptor.class),
     });
 
     private final InterceptorList classPathInterceptors;
