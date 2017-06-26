@@ -211,13 +211,11 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
             if (weakAffinity instanceof NodeAffinity) {
                 filterSpec = FilterSpec.all(
                     FilterSpec.equal(FILTER_ATTR_CLUSTER, ((ClusterAffinity) affinity).getClusterName()),
-                    FilterSpec.equal(FILTER_ATTR_NODE, ((NodeAffinity) weakAffinity).getNodeName()),
-                    getFilterSpec(locator.getIdentifier().getModuleIdentifier())
+                    FilterSpec.equal(FILTER_ATTR_NODE, ((NodeAffinity) weakAffinity).getNodeName())
                 );
                 fallbackFilterSpec = FilterSpec.all(
                     FilterSpec.equal(FILTER_ATTR_CLUSTER, ((ClusterAffinity) affinity).getClusterName()),
-                    FilterSpec.hasAttribute(FILTER_ATTR_NODE),
-                    getFilterSpec(locator.getIdentifier().getModuleIdentifier())
+                    FilterSpec.hasAttribute(FILTER_ATTR_NODE)
                 );
                 return doFirstMatchDiscovery(context, filterSpec, fallbackFilterSpec);
             } else if (weakAffinity instanceof URIAffinity || weakAffinity == Affinity.LOCAL) {
@@ -227,8 +225,7 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
             } else {
                 // regular cluster discovery
                 filterSpec = FilterSpec.all(
-                    FilterSpec.equal(FILTER_ATTR_CLUSTER, ((ClusterAffinity) affinity).getClusterName()),
-                    getFilterSpec(locator.getIdentifier().getModuleIdentifier())
+                    FilterSpec.equal(FILTER_ATTR_CLUSTER, ((ClusterAffinity) affinity).getClusterName())
                 );
                 return doClusterDiscovery(context, filterSpec);
             }
