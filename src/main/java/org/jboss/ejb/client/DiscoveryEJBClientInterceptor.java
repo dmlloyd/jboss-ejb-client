@@ -231,7 +231,7 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
             // no affinity in particular
             assert affinity == Affinity.NONE;
             filterSpec = getFilterSpec(locator.getIdentifier().getModuleIdentifier());
-            return doFirstMatchDiscovery(context, filterSpec, null);
+            return doAnyDiscovery(context, filterSpec, locator);
         }
         return null;
     }
@@ -279,6 +279,83 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
         } else {
             // no match!
         }
+        return problems;
+    }
+
+    private List<Throwable> doAnyDiscovery(AbstractInvocationContext context, final FilterSpec filterSpec, final EJBLocator<?> locator) {
+        Logs.INVOCATION.tracef("Performing first-match discovery(locator = %s, weak affinity = %s, filter spec = %s", context.getLocator(), context.getWeakAffinity(), filterSpec);
+        final List<Throwable> problems;
+        // blacklist
+        final Set<URI> blacklist = context.getAttachment(BL_KEY);
+        final Map<URI, String> nodes = new HashMap<>();
+        final Map<String, URI> uris = new HashMap<>();
+        int nodeless = 0;
+        try (final ServicesQueue queue = discover(filterSpec)) {
+            ServiceURL serviceURL;
+            while ((serviceURL = queue.takeService()) != null) {
+                final URI location = serviceURL.getLocationURI();
+                if (blacklist == null || ! blacklist.contains(location)) {
+                    // Got a match!  See if there's a node affinity to set for the invocation.
+                    final AttributeValue nodeValue = serviceURL.getFirstAttributeValue(FILTER_ATTR_NODE);
+                    if (nodeValue != null) {
+                        if (nodes.remove(location, null)) {
+                            nodeless--;
+                        }
+                        final String nodeName = nodeValue.toString();
+                        nodes.put(location, nodeName);
+                        uris.put(nodeName, location);
+                    } else {
+                        // just set the URI but don't overwrite a separately-found node name
+                        if (nodes.putIfAbsent(location, null) == null) {
+                            nodeless++;
+                        }
+                    }
+                    context.setDestination(location);
+                }
+            }
+            problems = queue.getProblems();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw Logs.MAIN.operationInterrupted();
+        }
+
+        if (nodes.isEmpty()) {
+            // no match
+            return problems;
+        }
+        URI location;
+        String nodeName;
+        if (nodes.size() == 1) {
+            final Map.Entry<URI, String> entry = nodes.entrySet().iterator().next();
+            location = entry.getKey();
+            nodeName = entry.getValue();
+        } else if (nodeless == 0) {
+            // use the deployment node selector
+            // todo: configure on client context
+            DeploymentNodeSelector selector = DeploymentNodeSelector.RANDOM;
+            nodeName = selector.selectNode(nodes.values().toArray(NO_STRINGS), locator.getAppName(), locator.getModuleName(), locator.getDistinctName());
+            if (nodeName == null) {
+                throw Logs.INVOCATION.selectorReturnedNull(selector);
+            }
+            location = uris.get(nodeName);
+            if (location == null) {
+                throw Logs.INVOCATION.selectorReturnedUnknownNode(selector, nodeName);
+            }
+        } else {
+            // todo: configure on client context
+            DiscoveredURISelector selector = DiscoveredURISelector.RANDOM;
+            location = selector.selectNode(new ArrayList<>(nodes.keySet()), locator);
+            if (location == null) {
+                throw Logs.INVOCATION.selectorReturnedNull(selector);
+            }
+            nodeName = nodes.get(location);
+            if (nodeName == null) {
+                throw Logs.INVOCATION.selectorReturnedUnknownNode(selector, location.toString());
+            }
+        }
+
+        context.setDestination(location);
+        context.setTargetAffinity(new NodeAffinity(nodeName));
         return problems;
     }
 

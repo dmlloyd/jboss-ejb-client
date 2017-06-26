@@ -120,6 +120,7 @@ public final class EJBClientContext extends Attachable implements Contextual<EJB
     private final InterceptorList globalInterceptors;
     private final Map<String, InterceptorList> configuredPerClassInterceptors;
     private final Map<String, Map<EJBMethodLocator, InterceptorList>> configuredPerMethodInterceptors;
+    private final int maximumConnectedClusterNodes;
 
     EJBClientContext(Builder builder) {
         final List<EJBTransportProvider> builderTransportProviders = builder.transportProviders;
@@ -153,6 +154,7 @@ public final class EJBClientContext extends Attachable implements Contextual<EJB
         }
         clusterNodeSelector = builder.clusterNodeSelector;
         deploymentNodeSelector = builder.deploymentNodeSelector;
+        maximumConnectedClusterNodes = builder.maximumConnectedClusterNodes;
 
         // global interceptors
         final List<EJBClientInterceptorInformation> globalInterceptors = builder.globalInterceptors;
@@ -369,6 +371,15 @@ public final class EJBClientContext extends Attachable implements Contextual<EJB
     }
 
     /**
+     * Get the maximum connected cluster nodes setting, for connection-based protocols which support eager connection.
+     *
+     * @return the maximum connected cluster nodes count
+     */
+    public int getMaximumConnectedClusterNodes() {
+        return maximumConnectedClusterNodes;
+    }
+
+    /**
      * Get a copy of this context with the given interceptor(s) added.  If the array is {@code null} or empty, the
      * current context is returned as-is.
      *
@@ -522,6 +533,7 @@ public final class EJBClientContext extends Attachable implements Contextual<EJB
         ClusterNodeSelector clusterNodeSelector = ClusterNodeSelector.DEFAULT;
         DeploymentNodeSelector deploymentNodeSelector = DeploymentNodeSelector.RANDOM;
         long invocationTimeout;
+        int maximumConnectedClusterNodes = 10;
 
         /**
          * Construct a new instance.
@@ -661,6 +673,12 @@ public final class EJBClientContext extends Attachable implements Contextual<EJB
         public Builder setInvocationTimeout(final long invocationTimeout) {
             Assert.checkMinimumParameter("invocationTimeout", 0L, invocationTimeout);
             this.invocationTimeout = invocationTimeout;
+            return this;
+        }
+
+        public Builder setMaximumConnectedClusterNodes(final int maximumConnectedClusterNodes) {
+            Assert.checkMinimumParameter("maximumConnectedClusterNodes", 0, maximumConnectedClusterNodes);
+            this.maximumConnectedClusterNodes = maximumConnectedClusterNodes;
             return this;
         }
 

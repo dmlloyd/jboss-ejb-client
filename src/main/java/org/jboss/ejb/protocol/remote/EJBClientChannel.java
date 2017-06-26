@@ -224,6 +224,7 @@ class EJBClientChannel {
                         int memberCount = StreamUtils.readPackedSignedInt32(message);
                         for (int j = 0; j < memberCount; j ++) {
                             final String nodeName = message.readUTF();
+                            discoveredNodeRegistry.addNode(clusterName, nodeName);
                             final NodeInformation nodeInformation = discoveredNodeRegistry.getNodeInformation(nodeName);
                             Logs.INVOCATION.debugf("Received CLUSTER_TOPOLOGY(%x) message, registering cluster %s to node %s", msg, clusterName, nodeName);
 
@@ -251,6 +252,7 @@ class EJBClientChannel {
                     int clusterCount = StreamUtils.readPackedSignedInt32(message);
                     for (int i = 0; i < clusterCount; i ++) {
                         String clusterName = message.readUTF();
+                        discoveredNodeRegistry.removeCluster(clusterName);
 
                         Logs.INVOCATION.debugf("Received CLUSTER_TOPOLOGY_REMOVAL(%x) message for cluster %s", msg, clusterName);
 
@@ -267,6 +269,7 @@ class EJBClientChannel {
                         int memberCount = StreamUtils.readPackedSignedInt32(message);
                         for (int j = 0; j < memberCount; j ++) {
                             String nodeName = message.readUTF();
+                            discoveredNodeRegistry.removeNode(clusterName, nodeName);
                             final NodeInformation nodeInformation = discoveredNodeRegistry.getNodeInformation(nodeName);
                             nodeInformation.removeCluster(clusterName);
 
