@@ -448,7 +448,7 @@ class EJBClientChannel {
                 out.close();
             }
         } catch (IOException e) {
-            receiverContext.requestFailed(new RequestSendFailedException(e.getMessage(), e, true), getRetryExecutor());
+            receiverContext.requestFailed(new RequestSendFailedException(e.getMessage() + " @ " + peerIdentity.getConnection().getPeerURI(), e, true), getRetryExecutor());
         } catch (RollbackException | SystemException | RuntimeException e) {
             receiverContext.requestFailed(new EJBException(e.getMessage(), e), getRetryExecutor());
             return;
@@ -798,7 +798,7 @@ class EJBClientChannel {
                     }
                     case Protocol.NO_SUCH_EJB: {
                         final String message = response.readUTF();
-                        throw new NoSuchEJBException(message);
+                        throw new NoSuchEJBException(message + " @ " + getChannel().getConnection().getPeerURI());
                     }
                     case Protocol.BAD_VIEW_TYPE: {
                         final String message = response.readUTF();
@@ -1002,7 +1002,7 @@ class EJBClientChannel {
                         final EJBModuleIdentifier moduleIdentifier = receiverInvocationContext.getClientInvocationContext().getLocator().getIdentifier().getModuleIdentifier();
                         final NodeInformation nodeInformation = discoveredNodeRegistry.getNodeInformation(getChannel().getConnection().getRemoteEndpointName());
                         nodeInformation.removeModule(EJBClientChannel.this, moduleIdentifier);
-                        receiverInvocationContext.requestFailed(new NoSuchEJBException(message), getRetryExecutor());
+                        receiverInvocationContext.requestFailed(new NoSuchEJBException(message + " @ " + getChannel().getConnection().getPeerURI()), getRetryExecutor());
                     } catch (IOException e) {
                         receiverInvocationContext.requestFailed(new EJBException("Failed to read 'No such EJB' response", e), getRetryExecutor());
                     } finally {

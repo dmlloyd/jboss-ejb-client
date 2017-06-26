@@ -81,12 +81,13 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
     public void handleInvocation(final EJBClientInvocationContext context) throws Exception {
         List<Throwable> problems = executeDiscovery(context);
         try {
-            try {
-                context.sendRequest();
-            } catch (NoSuchEJBException | RequestSendFailedException e) {
-                processMissingTarget(context);
-                throw e;
+            context.sendRequest();
+        } catch (NoSuchEJBException | RequestSendFailedException e) {
+            if (problems != null) for (Throwable problem : problems) {
+                context.addSuppressed(problem);
             }
+            processMissingTarget(context);
+            throw e;
         } catch (Exception e) {
             throw withSuppressed(e, problems);
         }
@@ -100,7 +101,8 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
             processMissingTarget(context);
             throw e;
         }
-        if (context.getLocator().getAffinity() instanceof ClusterAffinity && context.getWeakAffinity() == Affinity.NONE) {
+        final EJBLocator<?> locator = context.getLocator();
+        if (locator.isStateful() && context.getWeakAffinity() == Affinity.NONE) {
             // set the weak affinity to the location of the session!
             final Affinity targetAffinity = context.getTargetAffinity();
             if (targetAffinity != null) {
@@ -127,19 +129,7 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
         } catch (Exception t) {
             throw withSuppressed(t, problems);
         }
-        if (locator.getAffinity() == Affinity.NONE) {
-            // set the strong affinity to the location of the session!
-            final Affinity targetAffinity = context.getTargetAffinity();
-            if (targetAffinity != null) {
-                return locator.withNewAffinity(targetAffinity);
-            } else {
-                final URI destination = context.getDestination();
-                if (destination != null) {
-                    return locator.withNewAffinity(URIAffinity.forUri(destination));
-                }
-                // if destination is null, then an interceptor set the location
-            }
-        } else if (locator.getAffinity() instanceof ClusterAffinity && context.getWeakAffinity() == Affinity.NONE) {
+        if ((locator.getAffinity() == Affinity.NONE || locator.getAffinity() instanceof ClusterAffinity) && context.getWeakAffinity() == Affinity.NONE) {
             // set the weak affinity to the location of the session!
             final Affinity targetAffinity = context.getTargetAffinity();
             if (targetAffinity != null) {
@@ -202,6 +192,12 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
             // Simple; just set a fixed destination
             context.setDestination(affinity.getUri());
             context.setTargetAffinity(affinity);
+        } else if (affinity == Affinity.NONE && weakAffinity instanceof URIAffinity) {
+            context.setDestination(weakAffinity.getUri());
+            context.setTargetAffinity(weakAffinity);
+        } else if (affinity == Affinity.NONE && weakAffinity instanceof NodeAffinity) {
+            filterSpec = FilterSpec.equal(FILTER_ATTR_NODE, ((NodeAffinity) weakAffinity).getNodeName());
+            return doFirstMatchDiscovery(context, filterSpec, null);
         } else if (affinity instanceof NodeAffinity) {
             filterSpec = FilterSpec.equal(FILTER_ATTR_NODE, ((NodeAffinity) affinity).getNodeName());
             return doFirstMatchDiscovery(context, filterSpec, null);
@@ -283,7 +279,7 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
     }
 
     private List<Throwable> doAnyDiscovery(AbstractInvocationContext context, final FilterSpec filterSpec, final EJBLocator<?> locator) {
-        Logs.INVOCATION.tracef("Performing first-match discovery(locator = %s, weak affinity = %s, filter spec = %s", context.getLocator(), context.getWeakAffinity(), filterSpec);
+        Logs.INVOCATION.tracef("Performing any discovery(locator = %s, weak affinity = %s, filter spec = %s", context.getLocator(), context.getWeakAffinity(), filterSpec);
         final List<Throwable> problems;
         // blacklist
         final Set<URI> blacklist = context.getAttachment(BL_KEY);
