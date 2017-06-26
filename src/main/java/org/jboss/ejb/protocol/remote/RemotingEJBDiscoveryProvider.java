@@ -277,8 +277,9 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
         void countDown() {
             if (outstandingCount.decrementAndGet() == 0) {
                 final DiscoveryResult result = this.discoveryResult;
+                final String node = filterSpec.accept(NODE_EXTRACTOR);
+                final EJBModuleIdentifier module = filterSpec.accept(MI_EXTRACTOR);
                 if (phase2) {
-                    final String node = filterSpec.accept(NODE_EXTRACTOR);
                     if (node != null) {
                         final NodeInformation information = nodes.get(node);
                         if (information != null) information.discover(serviceType, filterSpec, result);
@@ -289,8 +290,6 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
                 } else {
                     boolean ok = false;
                     // optimize for simple module identifier and node name queries
-                    final EJBModuleIdentifier module = filterSpec.accept(MI_EXTRACTOR);
-                    final String node = filterSpec.accept(NODE_EXTRACTOR);
                     if (node != null) {
                         final NodeInformation information = nodes.get(node);
                         if (information != null) {

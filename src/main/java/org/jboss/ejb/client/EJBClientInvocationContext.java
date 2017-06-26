@@ -1053,9 +1053,12 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
             final Object lock = EJBClientInvocationContext.this.lock;
             assert !holdsLock(lock);
             synchronized (lock) {
-                // TODO: this could give a false positive during retry.  To solve this we need a separate "retry in progress" flag
-                // TODO: we should also calculate whether the invocation timed out
-                return ! state.isWaiting();
+                if (state == State.CONSUMING) {
+                    return retryRequested && remainingRetries > 0 && resultProducer instanceof ThrowableResult;
+                } else {
+                    // TODO: we should also calculate whether the invocation timed out
+                    return ! state.isWaiting();
+                }
             }
         }
 
