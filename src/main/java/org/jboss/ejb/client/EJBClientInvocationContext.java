@@ -558,19 +558,33 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
             } catch (Throwable t) {
                 if (idx == 0) {
                     synchronized (lock) {
+                        // retry if we can
                         this.resultProducer = null;
-                        pendingFailure = () -> t;
                         List<Supplier<? extends Throwable>> suppressedExceptions = this.suppressedExceptions;
-                        if (suppressedExceptions != null) {
-                            this.suppressedExceptions = null;
-                            for (Supplier<? extends Throwable> supplier : suppressedExceptions) {
-                                try {
-                                    t.addSuppressed(supplier.get());
-                                } catch (Throwable ignored) {}
+                        if (retryRequested && remainingRetries > 0) {
+                            if (suppressedExceptions == null) {
+                                suppressedExceptions = this.suppressedExceptions = new ArrayList<>();
                             }
+                            suppressedExceptions.add(() -> t);
+                            remainingRetries --;
+                            retryRequested = false;
+                            this.cachedResult = null;
+                            this.pendingFailure = null;
+                            transition(State.SENDING);
+                            checkStateInvariants();
+                        } else {
+                            pendingFailure = () -> t;
+                            if (suppressedExceptions != null) {
+                                this.suppressedExceptions = null;
+                                for (Supplier<? extends Throwable> supplier : suppressedExceptions) {
+                                    try {
+                                        t.addSuppressed(supplier.get());
+                                    } catch (Throwable ignored) {}
+                                }
+                            }
+                            transition(State.DONE);
+                            checkStateInvariants();
                         }
-                        transition(State.DONE);
-                        checkStateInvariants();
                     }
                 }
                 throw t;
@@ -725,9 +739,12 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
             }
         }
         switch (newState) {
-            case WAITING:
             case READY:
             case DONE: {
+                this.remainingRetries = 0;
+                // fall thru
+            }
+            case WAITING:{
                 lock.notifyAll();
                 break;
             }
@@ -757,7 +774,7 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                 break;
             }
             case READY: {
-                assert resultProducer != null && pendingFailure == null && cachedResult == null;
+                assert resultProducer != null && pendingFailure == null && cachedResult == null && remainingRetries == 0;
                 break;
             }
             case CONSUMING: {
@@ -765,7 +782,7 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                 break;
             }
             case DONE: {
-                assert resultProducer == null && (pendingFailure == null || pendingFailure != null && cachedResult == null);
+                assert resultProducer == null && (pendingFailure == null || pendingFailure != null && cachedResult == null) && remainingRetries == 0;
                 break;
             }
             default: {
@@ -943,28 +960,23 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                         checkStateInvariants();
                         return;
                     }
-                    // READY (with failure), or retry SENDING.
+                    // moving to READY or CONSUMING, both of which require resultProducer.
+                    this.resultProducer = new ThrowableResult(() -> exception);
+                    this.pendingFailure = null;
+                    // READY (with failure), or retry.
                     if (! retryRequested || remainingRetries == 0) {
                         // nobody wants retry, or there are none left; go to READY (with failure)
                         if (pendingFailure != null) {
                             addSuppressed(pendingFailure);
                         }
-                        this.pendingFailure = null;
-                        this.resultProducer = new ThrowableResult(() -> exception);
                         transition(State.READY);
                         checkStateInvariants();
                         return;
                     }
-                    // retry SENDING
-                    setReceiver(null);
-                    retryRequested = false;
-                    remainingRetries --;
-
-                    // record for later
-                    addSuppressed(exception);
+                    // retry SENDING via CONSUMING
+                    transition(State.CONSUMING);
                     // redo the request
-                    retryExecutor.execute(this::sendRequestInitial);
-                    transition(State.SENDING);
+                    retryExecutor.execute(this::retryOperation);
                     checkStateInvariants();
                     return;
                 }
@@ -974,6 +986,23 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
             }
         }
         // not reachable
+    }
+
+    void retryOperation() {
+        try {
+            getResult();
+        } catch (Throwable t) {
+            final State state;
+            synchronized (lock) {
+                state = this.state;
+            }
+            if (state == State.SENDING) {
+                sendRequestInitial();
+            } else {
+                // otherwise, nothing we can/should do (DONE)
+                assert state == State.DONE;
+            }
+        }
     }
 
     final class FutureResponse implements Future<Object> {
